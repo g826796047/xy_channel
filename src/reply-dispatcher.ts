@@ -19,6 +19,15 @@ export interface CreateXYReplyDispatcherParams {
 }
 
 const TEMP_FILE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const TOOL_RESULT_SUMMARY_MAX_CHARS = 300;
+
+function summarizeToolResult(text: string): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= TOOL_RESULT_SUMMARY_MAX_CHARS) {
+    return normalized;
+  }
+  return `${normalized.slice(0, TOOL_RESULT_SUMMARY_MAX_CHARS - 1)}…`;
+}
 
 /**
  * 清理 /tmp/xy_channel 目录中超过 24 小时的旧文件
@@ -149,7 +158,6 @@ export function createXYReplyDispatcher(params: CreateXYReplyDispatcherParams): 
       deliver: async (payload: ReplyPayload, info) => {
         const text = payload.text ?? "";
         const currentTaskId = getActiveTaskId();
-        const currentMessageId = getActiveMessageId();
 
         log(`[DELIVER] sessionId=${sessionId}, taskId=${currentTaskId}, info.kind=${info?.kind}, text.length=${text.length}`);
 
@@ -162,16 +170,7 @@ export function createXYReplyDispatcher(params: CreateXYReplyDispatcherParams): 
           accumulatedText += text;
           hasSentResponse = true;
           log(`[DELIVER ACCUMULATE] Accumulated text, current length=${accumulatedText.length}`);
-
-          // 🔑 使用动态taskId发送reasoningText更新
-          await sendReasoningTextUpdate({
-            config,
-            sessionId,
-            taskId: currentTaskId,
-            messageId: currentMessageId,
-            text,
-          });
-          log(`[DELIVER] ✅ Sent deliver text as reasoningText update`);
+          log(`[DELIVER] ✅ Accumulated assistant text for final response only`);
         } catch (deliverError) {
           error(`Failed to deliver message:`, deliverError);
         }
@@ -324,6 +323,15 @@ export function createXYReplyDispatcher(params: CreateXYReplyDispatcherParams): 
           }
 
           try {
+            await sendReasoningTextUpdate({
+              config,
+              sessionId,
+              taskId: currentTaskId,
+              messageId: currentMessageId,
+              text: `🔧 调用工具：${toolName}`,
+            });
+            log(`[TOOL START] ✅ Sent ReACT trace for tool start: ${toolName}`);
+
             await sendStatusUpdate({
               config,
               sessionId,
@@ -355,6 +363,19 @@ export function createXYReplyDispatcher(params: CreateXYReplyDispatcherParams): 
         try {
           if (text.length > 0 || hasMedia) {
             const resultText = text.length > 0 ? text : "工具执行完成";
+            const reactTraceText =
+              text.length > 0
+                ? `✅ 工具完成：${summarizeToolResult(text)}`
+                : "✅ 工具完成：已生成/返回媒体结果";
+
+            await sendReasoningTextUpdate({
+              config,
+              sessionId,
+              taskId: currentTaskId,
+              messageId: currentMessageId,
+              text: reactTraceText,
+            });
+            log(`[TOOL RESULT] ✅ Sent ReACT trace for tool result`);
 
             await sendStatusUpdate({
               config,
@@ -390,24 +411,8 @@ export function createXYReplyDispatcher(params: CreateXYReplyDispatcherParams): 
           return;
         }
 
-        const currentTaskId = getActiveTaskId();
-        const currentMessageId = getActiveMessageId();
         const text = payload.text ?? "";
-
-        try {
-          if (text.length > 0) {
-            await sendReasoningTextUpdate({
-              config,
-              sessionId,
-              taskId: currentTaskId,
-              messageId: currentMessageId,
-              text,
-              append: false,
-            });
-          }
-        } catch (err) {
-          error(`[PARTIAL REPLY] ❌ Failed to send partial reply:`, err);
-        }
+        log(`[PARTIAL REPLY] Partial assistant text received but not sent as reasoningText, text.length=${text.length}`);
       },
     },
     markDispatchIdle,
