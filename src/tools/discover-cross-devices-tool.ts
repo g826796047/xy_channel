@@ -1,8 +1,8 @@
 import type { ChannelAgentTool } from "openclaw/plugin-sdk";
-import { v4 as uuidv4 } from "uuid";
+import { sendCommand, sendStatusUpdate } from "../formatter.js";
 import { getXYWebSocketManager } from "../client.js";
 import { getCurrentMessageId, getCurrentTaskId } from "../task-manager.js";
-import type { A2ADataEvent, OutboundWebSocketMessage } from "../types.js";
+import type { A2ACommand, A2ADataEvent } from "../types.js";
 import { getCurrentSessionContext } from "./session-manager.js";
 
 const DISCOVER_DEVICES_INTENT = "SearchAllDeviceInfo";
@@ -103,75 +103,6 @@ function recommendDevices(
   };
 }
 
-async function sendDiscoverDevicesCommand(params: {
-  config: any;
-  sessionId: string;
-  taskId: string;
-  messageId: string;
-}): Promise<void> {
-  const { config, sessionId, taskId, messageId } = params;
-  const wsManager = getXYWebSocketManager(config);
-
-  const command = {
-    header: {
-      namespace: "Common",
-      name: "Action",
-    },
-    payload: {
-      needUploadResult: true,
-      actionResponseConfig: {},
-      response: [],
-      executeParam: {
-        executeMode: "background",
-        intentName: DISCOVER_DEVICES_INTENT,
-        intentParam: {},
-        bundleName: DISCOVER_DEVICES_BUNDLE,
-      },
-    },
-  };
-
-  const jsonRpcResponse = {
-    jsonrpc: "2.0",
-    id: messageId,
-    result: {
-      taskId,
-      kind: "artifact-update",
-      append: false,
-      lastChunk: true,
-      final: false,
-      artifact: {
-        artifactId: uuidv4(),
-        parts: [
-          {
-            kind: "text",
-            text: DISCOVER_DEVICES_STATUS_TEXT,
-          },
-          {
-            kind: "data",
-            data: {
-              command,
-            },
-          },
-        ],
-      },
-    },
-    error: {
-      code: "0",
-      message: "",
-    },
-  };
-
-  const outboundMessage: OutboundWebSocketMessage = {
-    msgType: "agent_response",
-    agentId: config.agentId,
-    sessionId,
-    taskId,
-    msgDetail: JSON.stringify(jsonRpcResponse),
-  };
-
-  await wsManager.sendMessage(sessionId, outboundMessage);
-}
-
 function buildResultText(result: Record<string, unknown>): {
   content: Array<{ type: "text"; text: string }>;
 } {
@@ -241,6 +172,23 @@ export const discoverCrossDevicesTool: ChannelAgentTool = {
     const taskId = getCurrentTaskId(sessionId) ?? sessionContext.taskId;
     const messageId = getCurrentMessageId(sessionId) ?? sessionContext.messageId;
     const wsManager = getXYWebSocketManager(config);
+    const command: A2ACommand = {
+      header: {
+        namespace: "Common",
+        name: "Action",
+      },
+      payload: {
+        needUploadResult: true,
+        actionResponseConfig: {},
+        response: [],
+        executeParam: {
+          executeMode: "background",
+          intentName: DISCOVER_DEVICES_INTENT,
+          intentParam: {},
+          bundleName: DISCOVER_DEVICES_BUNDLE,
+        },
+      },
+    };
 
     return new Promise((resolve) => {
       let timeout: NodeJS.Timeout;
@@ -307,21 +255,33 @@ export const discoverCrossDevicesTool: ChannelAgentTool = {
 
       wsManager.on("data-event", handler);
 
-      sendDiscoverDevicesCommand({
+      sendStatusUpdate({
         config,
         sessionId,
         taskId,
         messageId,
-      }).catch((error) => {
-        finish({
-          success: false,
-          rawOutputs: null,
-          devices: [],
-          recommendedDevices: [],
-          recommendationReason: "",
-          message: `Failed to send device discovery command: ${error instanceof Error ? error.message : String(error)}`,
+        text: DISCOVER_DEVICES_STATUS_TEXT,
+        state: "working",
+      })
+        .then(() =>
+          sendCommand({
+            config,
+            sessionId,
+            taskId,
+            messageId,
+            command,
+          }),
+        )
+        .catch((error) => {
+          finish({
+            success: false,
+            rawOutputs: null,
+            devices: [],
+            recommendedDevices: [],
+            recommendationReason: "",
+            message: `Failed to send device discovery command: ${error instanceof Error ? error.message : String(error)}`,
+          });
         });
-      });
     });
   },
 };
