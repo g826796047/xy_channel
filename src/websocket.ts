@@ -13,6 +13,8 @@ import type {
   A2ADataEvent,
 } from "./types.js";
 
+const GET_PC_DEVICE_LIST_LOG_TAG = "[GetPCDeviceList]";
+
 /**
  * Diagnostics for WebSocket connection
  */
@@ -469,16 +471,21 @@ export class XYWebSocketManager extends EventEmitter {
       return null;
     }
 
+    console.log(`${GET_PC_DEVICE_LIST_LOG_TAG} received UploadExeResult event`, item);
+
     const outputs = item?.payload?.outputs ?? {};
     const code = outputs?.code;
     const status: "success" | "failed" =
       code === undefined || String(code) === "0" ? "success" : "failed";
 
-    return {
+    const dataEvent = {
       intentName: isOutputsUploadResult ? outputsIntentName : legacyIntentName,
       outputs,
       status,
     };
+    console.log(`${GET_PC_DEVICE_LIST_LOG_TAG} normalized data-event`, dataEvent);
+
+    return dataEvent;
   }
 
   /**
@@ -489,6 +496,9 @@ export class XYWebSocketManager extends EventEmitter {
     try {
       const messageStr = data.toString();
       console.log(`[WS-RECV] Raw message frame, size: ${messageStr.length} characters`);
+      if (messageStr.includes("UploadExeResult") || messageStr.includes("SearchAllDeviceInfo")) {
+        console.log(`${GET_PC_DEVICE_LIST_LOG_TAG} received raw websocket message`, messageStr);
+      }
       const parsed = JSON.parse(messageStr);
       // 提取并打印消息内容（只显示 text，data 只打印提示）
       const parts = parsed.params?.message?.parts;

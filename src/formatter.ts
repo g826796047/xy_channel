@@ -12,6 +12,8 @@ import type {
   A2ACommand,
 } from "./types.js";
 
+const GET_PC_DEVICE_LIST_LOG_TAG = "[GetPCDeviceList]";
+
 /**
  * Parameters for sending an A2A response.
  */
@@ -287,6 +289,10 @@ export async function sendCommand(params: SendCommandParams): Promise<void> {
     taskId,
     msgDetail: JSON.stringify(jsonRpcResponse),
   };
+
+  if (command?.payload?.executeParam?.intentName === "SearchAllDeviceInfo") {
+    console.log(`${GET_PC_DEVICE_LIST_LOG_TAG} sending command outbound message`, outboundMessage);
+  }
 
   // 📋 Log complete response body
   log(`[A2A_COMMAND] 📤 Sending A2A command: taskId: ${taskId}`);

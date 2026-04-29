@@ -8,6 +8,7 @@ import { getCurrentSessionContext } from "./session-manager.js";
 const DISCOVER_DEVICES_INTENT = "SearchAllDeviceInfo";
 const DISCOVER_DEVICES_BUNDLE = "com.huawei.hmos.vassistant";
 const DISCOVER_DEVICES_TIMEOUT_MS = 30_000;
+const LOG_TAG = "[GetPCDeviceList]";
 const DISCOVER_DEVICES_STATUS_TEXT = "正在查询设备列表...";
 
 const DEVICE_TYPE_LABELS: Record<string, string> = {
@@ -33,6 +34,14 @@ type NormalizedDeviceInfo = {
   nearby: boolean;
   rawDevice: RawDeviceInfo;
 };
+
+function stringifyForLog(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch (error) {
+    return `[Unserializable value: ${error instanceof Error ? error.message : String(error)}]`;
+  }
+}
 
 function normalizeDevices(rawDevices: unknown): NormalizedDeviceInfo[] {
   if (!Array.isArray(rawDevices)) {
@@ -145,7 +154,9 @@ export const discoverCrossDevicesTool: any = {
 
   async execute(_toolCallId: string, params: any) {
     const query = typeof params.query === "string" ? params.query.trim() : "";
+    console.log(`${LOG_TAG} tool invoked, params=${stringifyForLog(params)}`);
     if (!query) {
+      console.log(`${LOG_TAG} missing required query parameter`);
       return buildResultText({
         success: false,
         rawOutputs: null,
@@ -158,6 +169,7 @@ export const discoverCrossDevicesTool: any = {
 
     const sessionContext = getCurrentSessionContext();
     if (!sessionContext) {
+      console.log(`${LOG_TAG} no active XY session found`);
       return buildResultText({
         success: false,
         rawOutputs: null,
@@ -172,6 +184,9 @@ export const discoverCrossDevicesTool: any = {
     const taskId = getCurrentTaskId(sessionId) ?? sessionContext.taskId;
     const messageId = getCurrentMessageId(sessionId) ?? sessionContext.messageId;
     const wsManager = getXYWebSocketManager(config);
+    console.log(
+      `${LOG_TAG} session context resolved, sessionId=${sessionId}, taskId=${taskId}, messageId=${messageId}`,
+    );
     const command: A2ACommand = {
       header: {
         namespace: "Common",
@@ -189,6 +204,7 @@ export const discoverCrossDevicesTool: any = {
         },
       },
     };
+    console.log(`${LOG_TAG} prepared device discovery command=${stringifyForLog(command)}`);
 
     return new Promise((resolve) => {
       let timeout: NodeJS.Timeout;
@@ -198,6 +214,7 @@ export const discoverCrossDevicesTool: any = {
       const cleanup = () => {
         clearTimeout(timeout);
         wsManager.off("data-event", handler);
+        console.log(`${LOG_TAG} cleaned up data-event listener`);
       };
 
       const finish = (result: Record<string, unknown>) => {
@@ -205,12 +222,15 @@ export const discoverCrossDevicesTool: any = {
           return;
         }
         settled = true;
+        console.log(`${LOG_TAG} finishing tool result=${stringifyForLog(result)}`);
         cleanup();
         resolve(buildResultText(result));
       };
 
       handler = (event: A2ADataEvent) => {
+        console.log(`${LOG_TAG} received data-event=${stringifyForLog(event)}`);
         if (event.intentName !== DISCOVER_DEVICES_INTENT) {
+          console.log(`${LOG_TAG} ignoring data-event with intentName=${event.intentName}`);
           return;
         }
 
@@ -219,6 +239,9 @@ export const discoverCrossDevicesTool: any = {
         const success = event.status === "success" && String(code) === "0";
         const devices = normalizeDevices(rawOutputs.result?.devices);
         const recommendation = recommendDevices(query, devices);
+        console.log(
+          `${LOG_TAG} parsed UploadExeResult, success=${success}, code=${String(code)}, devices=${devices.length}, recommended=${recommendation.recommendedDevices.length}`,
+        );
 
         if (!success) {
           finish({
@@ -243,6 +266,7 @@ export const discoverCrossDevicesTool: any = {
       };
 
       timeout = setTimeout(() => {
+        console.log(`${LOG_TAG} timeout waiting UploadExeResult after ${DISCOVER_DEVICES_TIMEOUT_MS}ms`);
         finish({
           success: false,
           rawOutputs: null,
@@ -254,7 +278,9 @@ export const discoverCrossDevicesTool: any = {
       }, DISCOVER_DEVICES_TIMEOUT_MS);
 
       wsManager.on("data-event", handler);
+      console.log(`${LOG_TAG} data-event listener registered, timeoutMs=${DISCOVER_DEVICES_TIMEOUT_MS}`);
 
+      console.log(`${LOG_TAG} sending status update text=${DISCOVER_DEVICES_STATUS_TEXT}`);
       sendStatusUpdate({
         config,
         sessionId,
@@ -263,16 +289,23 @@ export const discoverCrossDevicesTool: any = {
         text: DISCOVER_DEVICES_STATUS_TEXT,
         state: "working",
       })
-        .then(() =>
-          sendCommand({
+        .then(() => {
+          console.log(`${LOG_TAG} status update sent, sending command=${stringifyForLog(command)}`);
+          return sendCommand({
             config,
             sessionId,
             taskId,
             messageId,
             command,
-          }),
-        )
+          });
+        })
+        .then(() => {
+          console.log(`${LOG_TAG} command sent successfully`);
+        })
         .catch((error) => {
+          console.error(
+            `${LOG_TAG} failed to send device discovery command: ${error instanceof Error ? error.message : String(error)}`,
+          );
           finish({
             success: false,
             rawOutputs: null,
