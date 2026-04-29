@@ -1,3 +1,4 @@
+import type { ChannelAgentTool } from "openclaw/plugin-sdk";
 import { v4 as uuidv4 } from "uuid";
 import { getXYWebSocketManager } from "../client.js";
 import { getCurrentMessageId, getCurrentTaskId } from "../task-manager.js";
@@ -184,11 +185,21 @@ function buildResultText(result: Record<string, unknown>): {
   };
 }
 
-export const discoverCrossDevicesTool: any = {
+export const discoverCrossDevicesTool: ChannelAgentTool = {
   name: "discover_cross_devices",
-  label: "Discover Cross Devices",
-  description:
-    "Discover all devices under the user's account for cross-device collaboration. Call this when the user asks to use, find, fetch, or operate something from another device such as PC, laptop, desktop, tablet, or phone. This tool only discovers candidate devices and does not execute the cross-device task.",
+  label: "发现跨设备协作设备",
+  description: `跨设备协作的设备发现工具。
+
+当用户明确表达要从另一台设备获取、查找、使用或操作内容时，必须优先调用本工具，例如：
+- 从 PC、电脑、台式机、笔记本获取文件或查找资料
+- 在平板上查找文件、照片、日程、备忘录等内容
+- 从手机获取照片、文件、消息或其他本地数据
+- 用户提到“另一台设备”“其他设备”“跨设备”“副设备”等协作意图
+
+本工具会查询当前账号下可用的手机、平板、台式机、笔记本等设备列表，并根据用户原始需求给出候选目标设备和浅层推荐。
+本工具只做设备发现和目标设备推荐，不会读取副设备文件内容，不会上传文件，也不会真正下发跨端执行任务。
+
+如果用户只是操作当前设备，或没有明确跨设备意图，不要调用本工具。`,
   parameters: {
     type: "object",
     properties: {
