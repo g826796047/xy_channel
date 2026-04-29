@@ -452,6 +452,36 @@ export class XYWebSocketManager extends EventEmitter {
   }
 
   /**
+   * Convert both legacy and current UploadExeResult event shapes into the
+   * internal data-event format used by device tools.
+   */
+  private toUploadExeDataEvent(item: any): A2ADataEvent | null {
+    const legacyIntentName = item?.payload?.intentName;
+    const outputsIntentName = item?.payload?.outputs?.intentName;
+    const isLegacyUploadResult =
+      item?.header?.name === "UploadExeResult" && typeof legacyIntentName === "string";
+    const isOutputsUploadResult =
+      item?.header?.namespace === "UploadExeResult" &&
+      item?.header?.name === "Common" &&
+      typeof outputsIntentName === "string";
+
+    if (!isLegacyUploadResult && !isOutputsUploadResult) {
+      return null;
+    }
+
+    const outputs = item?.payload?.outputs ?? {};
+    const code = outputs?.code;
+    const status: "success" | "failed" =
+      code === undefined || String(code) === "0" ? "success" : "failed";
+
+    return {
+      intentName: isOutputsUploadResult ? outputsIntentName : legacyIntentName,
+      outputs,
+      status,
+    };
+  }
+
+  /**
    * Handle incoming message from server.
    */
   private handleMessage(data: WebSocket.Data): void {
@@ -515,13 +545,9 @@ export class XYWebSocketManager extends EventEmitter {
 
             console.log(`[XY] Processing ${events.length} events from data.events`);
             for (const item of events) {
-              if (item.header?.name === "UploadExeResult" && item.payload?.intentName) {
-                const dataEvent = {
-                  intentName: item.payload.intentName,
-                  outputs: item.payload.outputs || {},
-                  status: "success" as const,
-                };
-                console.log(`[XY] Emitting data-event, intentName: ${item.payload.intentName}, size: ${JSON.stringify(dataEvent).length} bytes`);
+              const dataEvent = this.toUploadExeDataEvent(item);
+              if (dataEvent) {
+                console.log(`[XY] Emitting data-event, intentName: ${dataEvent.intentName}, status: ${dataEvent.status}, size: ${JSON.stringify(dataEvent).length} bytes`);
                 this.emit("data-event", dataEvent);
               } else if (item.header?.namespace === "ClawAgent" && item.header?.name === "InvokeJarvisGUIAgentResponse") {
                 console.log(`[XY] Emitting gui-agent-response, size: ${JSON.stringify(item).length} bytes`);
@@ -591,13 +617,9 @@ export class XYWebSocketManager extends EventEmitter {
 
               console.log(`[XY] Processing ${events.length} events from data.events`);
               for (const item of events) {
-                if (item.header?.name === "UploadExeResult" && item.payload?.intentName) {
-                  const dataEvent = {
-                    intentName: item.payload.intentName,
-                    outputs: item.payload.outputs || {},
-                    status: "success" as const,
-                  };
-                  console.log(`[XY] Emitting data-event, intentName: ${item.payload.intentName}, size: ${JSON.stringify(dataEvent).length} bytes`);
+                const dataEvent = this.toUploadExeDataEvent(item);
+                if (dataEvent) {
+                  console.log(`[XY] Emitting data-event, intentName: ${dataEvent.intentName}, status: ${dataEvent.status}, size: ${JSON.stringify(dataEvent).length} bytes`);
                   this.emit("data-event", dataEvent);
                 } else if (item.header?.namespace === "ClawAgent" && item.header?.name === "InvokeJarvisGUIAgentResponse") {
                   console.log(`[XY] Emitting gui-agent-response, size: ${JSON.stringify(item).length} bytes`);
