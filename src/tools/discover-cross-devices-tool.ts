@@ -116,7 +116,7 @@ function buildResultText(result: Record<string, unknown>): {
   };
 }
 
-export const discoverCrossDevicesTool: ChannelAgentTool = {
+export const discoverCrossDevicesTool: any = {
   name: "discover_cross_devices",
   label: "发现跨设备协作设备",
   description: `跨设备协作的设备发现工具。
