@@ -20,6 +20,57 @@ export interface CreateXYReplyDispatcherParams {
 
 const TEMP_FILE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const TOOL_RESULT_SUMMARY_MAX_CHARS = 300;
+const KNOWN_TOOL_NAMES = [
+  "create_calendar_event",
+  "call_device_tool",
+  "call_phone",
+  "create_alarm",
+  "delete_alarm",
+  "discover_cross_devices",
+  "get_alarm_tool_schema",
+  "get_calendar_tool_schema",
+  "get_collection_tool_schema",
+  "get_contact_tool_schema",
+  "get_device_file_tool_schema",
+  "get_email_tool_schema",
+  "get_note_tool_schema",
+  "get_photo_tool_schema",
+  "image_reading",
+  "get_user_location",
+  "huawei_id_tool",
+  "modify_alarm",
+  "modify_note",
+  "create_note",
+  "query_app_message",
+  "query_memory_data",
+  "query_todo_task",
+  "save_file_to_file_manager",
+  "save_media_to_gallery",
+  "save_self_evolution_skill",
+  "search_alarm",
+  "search_calendar_event",
+  "search_contact",
+  "search_email",
+  "search_file",
+  "search_message",
+  "search_notes",
+  "search_photo_gallery",
+  "send_email",
+  "send_file_to_user",
+  "send_message",
+  "convert_timestamp_to_utc8_time",
+  "upload_file",
+  "upload_photo",
+  "view_push_result",
+  "add_collection",
+  "query_collection",
+  "delete_collection",
+  "xiaoyi_gui_agent",
+] as const;
+
+const COMPRESSED_TOOL_NAME_MAP = new Map(
+  KNOWN_TOOL_NAMES.map((toolName) => [toolName.replace(/_/g, "").toLowerCase(), toolName]),
+);
 
 function summarizeToolResult(text: string): string {
   const normalized = text.replace(/\s+/g, " ").trim();
@@ -27,6 +78,16 @@ function summarizeToolResult(text: string): string {
     return normalized;
   }
   return `${normalized.slice(0, TOOL_RESULT_SUMMARY_MAX_CHARS - 1)}…`;
+}
+
+function formatToolDisplayName(name: string): string {
+  const normalized = name.trim();
+  const knownName = COMPRESSED_TOOL_NAME_MAP.get(normalized.replace(/[_\-\s]/g, "").toLowerCase()) ?? normalized;
+  return knownName
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_\-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
@@ -107,6 +168,13 @@ export function createXYReplyDispatcher(params: CreateXYReplyDispatcherParams): 
   let hasSentResponse = false;
   let finalSent = false;
   let accumulatedText = "";
+  let hasSentReasoningTrace = false;
+
+  const formatReasoningTraceLine = (text: string): string => {
+    const prefix = hasSentReasoningTrace ? "\n" : "";
+    hasSentReasoningTrace = true;
+    return `${prefix}${text}`;
+  };
 
   /**
    * Start the status update interval
@@ -314,6 +382,7 @@ export function createXYReplyDispatcher(params: CreateXYReplyDispatcherParams): 
 
         if (phase === "start") {
           const toolName = name || "unknown";
+          const toolDisplayName = formatToolDisplayName(toolName);
 
           // call_device_tool 由自身 execute() 内部发送具体子工具名的状态更新
           // get_xxx_tool_schema 是给 LLM 查 schema 用的，无需向用户展示
@@ -328,19 +397,19 @@ export function createXYReplyDispatcher(params: CreateXYReplyDispatcherParams): 
               sessionId,
               taskId: currentTaskId,
               messageId: currentMessageId,
-              text: `🔧 调用工具：${toolName}`,
+              text: formatReasoningTraceLine(`🔧 调用工具：${toolDisplayName}`),
             });
-            log(`[TOOL START] ✅ Sent ReACT trace for tool start: ${toolName}`);
+            log(`[TOOL START] ✅ Sent ReACT trace for tool start: ${toolDisplayName}`);
 
             await sendStatusUpdate({
               config,
               sessionId,
               taskId: currentTaskId,
               messageId: currentMessageId,
-              text: `正在使用工具: ${toolName}...`,
+              text: `正在使用工具: ${toolDisplayName}...`,
               state: "working",
             });
-            log(`[TOOL START] ✅ Sent status update for tool start: ${toolName}`);
+            log(`[TOOL START] ✅ Sent status update for tool start: ${toolDisplayName}`);
           } catch (err) {
             error(`[TOOL START] ❌ Failed to send tool start status:`, err);
           }
@@ -373,7 +442,7 @@ export function createXYReplyDispatcher(params: CreateXYReplyDispatcherParams): 
               sessionId,
               taskId: currentTaskId,
               messageId: currentMessageId,
-              text: reactTraceText,
+              text: formatReasoningTraceLine(reactTraceText),
             });
             log(`[TOOL RESULT] ✅ Sent ReACT trace for tool result`);
 
