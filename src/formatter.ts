@@ -13,6 +13,7 @@ import type {
 } from "./types.js";
 
 const GET_PC_DEVICE_LIST_LOG_TAG = "[GetPCDeviceList]";
+const SEND_PC_DEVICE_TASK_LOG_TAG = "[SendPcDeviceTask]";
 
 /**
  * Parameters for sending an A2A response.
@@ -292,6 +293,9 @@ export async function sendCommand(params: SendCommandParams): Promise<void> {
 
   if (command?.payload?.executeParam?.intentName === "SearchAllDeviceInfo") {
     console.log(`${GET_PC_DEVICE_LIST_LOG_TAG} sending command outbound message`, outboundMessage);
+  }
+  if (command?.header?.namespace === "DistributionInteraction" && command?.header?.name === "UnifiedDistribute") {
+    console.log(`${SEND_PC_DEVICE_TASK_LOG_TAG} sending command outbound message`, outboundMessage);
   }
 
   // 📋 Log complete response body

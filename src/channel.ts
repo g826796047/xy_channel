@@ -27,6 +27,7 @@ import { queryMemoryDataTool } from "./tools/query-memory-data-tool.js";
 import { queryTodoTaskTool } from "./tools/query-todo-task-tool.js";
 import { loginTokenTool } from "./tools/login-token-tool.js";
 import { discoverCrossDevicesTool } from "./tools/discover-cross-devices-tool.js";
+import { sendCrossDeviceTaskTool } from "./tools/send-cross-device-task-tool.js";
 import { filterToolsByDevice } from "./tools/device-tool-map.js";
 import { getCurrentSessionContext } from "./tools/session-manager.js";
 import { getXYWebSocketManager } from "./client.js";
@@ -78,7 +79,7 @@ export const xyPlugin: ChannelPlugin = {
 
   outbound: xyOutbound,
   agentTools: () => {
-    const allTools = [locationTool, discoverCrossDevicesTool, callDeviceTool, getNoteToolSchemaTool, getCalendarToolSchemaTool, getContactToolSchemaTool, getPhotoToolSchemaTool, xiaoyiGuiTool, getDeviceFileToolSchemaTool, getAlarmToolSchemaTool, getCollectionToolSchemaTool, sendFileToUserTool, viewPushResultTool, imageReadingTool, timestampToUtc8Tool, saveSelfEvolutionSkillTool, getEmailToolSchemaTool, queryAppMessageTool, queryMemoryDataTool, queryTodoTaskTool, loginTokenTool];
+    const allTools = [locationTool, discoverCrossDevicesTool, sendCrossDeviceTaskTool, callDeviceTool, getNoteToolSchemaTool, getCalendarToolSchemaTool, getContactToolSchemaTool, getPhotoToolSchemaTool, xiaoyiGuiTool, getDeviceFileToolSchemaTool, getAlarmToolSchemaTool, getCollectionToolSchemaTool, sendFileToUserTool, viewPushResultTool, imageReadingTool, timestampToUtc8Tool, saveSelfEvolutionSkillTool, getEmailToolSchemaTool, queryAppMessageTool, queryMemoryDataTool, queryTodoTaskTool, loginTokenTool];
     const ctx = getCurrentSessionContext();
     const filtered = filterToolsByDevice(allTools, ctx?.deviceType);
     logger.log(`[DEVICE-FILTER] deviceType=${ctx?.deviceType ?? "(none)"}, tools: ${allTools.length} → ${filtered.length} (${filtered.map(t => t.name).join(", ")})`);

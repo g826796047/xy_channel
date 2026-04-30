@@ -87,6 +87,14 @@ export interface A2ADataEvent {
   status: "success" | "failed";
 }
 
+export interface CrossDeviceTaskResultEvent {
+  sessionId: string;
+  code: string;
+  message: string;
+  status: "success" | "failed";
+  rawEvent: any;
+}
+
 // ============================================================================
 // Response/Event Types
 // ============================================================================

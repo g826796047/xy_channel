@@ -88,13 +88,17 @@ function sortByNearby(devices: NormalizedDeviceInfo[]): NormalizedDeviceInfo[] {
 function recommendDevices(
   query: string,
   devices: NormalizedDeviceInfo[],
-): { recommendedDevices: NormalizedDeviceInfo[]; recommendationReason: string } {
+): { recommendedDevices: NormalizedDeviceInfo[]; recommendationReason: string; needsUserSelection: boolean; selectionPrompt: string } {
   const desiredTypes = inferDesiredDeviceTypes(query);
 
   if (desiredTypes.length === 0) {
     return {
       recommendedDevices: [],
       recommendationReason: "No explicit target device type was detected in the query.",
+      needsUserSelection: devices.length > 1,
+      selectionPrompt: devices.length > 1
+        ? "The query does not identify a unique device type. Ask the user to choose a target device by deviceName or deviceId before sending a cross-device task."
+        : "",
     };
   }
 
@@ -103,12 +107,19 @@ function recommendDevices(
     return {
       recommendedDevices: [],
       recommendationReason: `No discovered device matches requested type(s): ${desiredTypes.join(", ")}.`,
+      needsUserSelection: false,
+      selectionPrompt: "",
     };
   }
 
+  const sortedMatches = sortByNearby(matches);
   return {
-    recommendedDevices: sortByNearby(matches),
+    recommendedDevices: sortedMatches,
     recommendationReason: `Matched requested device type(s): ${desiredTypes.join(", ")}. Nearby devices are ranked first.`,
+    needsUserSelection: sortedMatches.length > 1,
+    selectionPrompt: sortedMatches.length > 1
+      ? "Multiple candidate devices match the user request. Ask the user to choose one target device by deviceName or deviceId before calling send_cross_device_task."
+      : "",
   };
 }
 
@@ -250,6 +261,8 @@ export const discoverCrossDevicesTool: any = {
             devices,
             recommendedDevices: recommendation.recommendedDevices,
             recommendationReason: recommendation.recommendationReason,
+            needsUserSelection: recommendation.needsUserSelection,
+            selectionPrompt: recommendation.selectionPrompt,
             message: "Device discovery failed on the device side.",
           });
           return;
@@ -261,7 +274,11 @@ export const discoverCrossDevicesTool: any = {
           devices,
           recommendedDevices: recommendation.recommendedDevices,
           recommendationReason: recommendation.recommendationReason,
-          message: `Discovered ${devices.length} device(s). The model should choose the final target device based on the user request.`,
+          needsUserSelection: recommendation.needsUserSelection,
+          selectionPrompt: recommendation.selectionPrompt,
+          message: recommendation.needsUserSelection
+            ? `Discovered ${devices.length} device(s). Multiple candidates may match; ask the user to choose the target device before sending a cross-device task.`
+            : `Discovered ${devices.length} device(s). The model should choose the final target device based on the user request.`,
         });
       };
 
