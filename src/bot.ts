@@ -3,7 +3,7 @@ import type { ClawdbotConfig, RuntimeEnv, ReplyPayload } from "openclaw/plugin-s
 import { getXYRuntime } from "./runtime.js";
 import { setCachedContext } from "./steer-injector.js";
 import { createXYReplyDispatcher } from "./reply-dispatcher.js";
-import { parseA2AMessage, extractTextFromParts, extractFileParts, extractPushId, extractDeviceType, extractTriggerData, isClearContextMessage, isTasksCancelMessage } from "./parser.js";
+import { parseA2AMessage, extractTextFromParts, extractFileParts, extractPushId, extractDeviceType, extractNetworkId, extractTriggerData, isClearContextMessage, isTasksCancelMessage } from "./parser.js";
 import { downloadFilesFromParts } from "./file-download.js";
 import { resolveXYConfig } from "./config.js";
 import { sendStatusUpdate, sendClearContextResponse, sendTasksCancelResponse, sendA2AResponse } from "./formatter.js";
@@ -183,6 +183,13 @@ export async function handleXYMessage(params: HandleXYMessageParams): Promise<vo
       log(`[BOT] 📱 Extracted deviceType from user message: ${deviceType}`);
     }
 
+    // Extract networkId if present (for cross-device softbus routing)
+    const networkId = extractNetworkId(parsed.parts);
+    if (networkId) {
+      log(`[BOT] 🔗 Extracted networkId from user message: ${networkId}`);
+    }
+    log(`[IF610] bot: sessionId=${parsed.sessionId}, networkId=${networkId ?? "N/A"}, deviceType=${deviceType ?? "N/A"}`);
+
     // 保存 runtime 信息到 .xiaoyiruntime 文件（异步，不阻塞主流程）
     saveRuntimeInfo(
       webSocketSessionId || parsed.sessionId, // SESSION_ID (WebSocket 层级，如果没有则 fallback)
@@ -339,6 +346,7 @@ export async function handleXYMessage(params: HandleXYMessageParams): Promise<vo
       messageId: parsed.messageId,
       agentId: route.accountId,
       deviceType,
+      networkId,
     };
 
     log(`[BOT-DISPATCH] ⏳ withReplyDispatcher starting, sessionKey=${route.sessionKey}`);

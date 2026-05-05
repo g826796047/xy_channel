@@ -1,5 +1,5 @@
 import type { ChannelAgentTool } from "openclaw/plugin-sdk";
-import { sendA2AResponse, sendCommand } from "../formatter.js";
+import { sendA2AResponse, sendCommand, sendDirectivesForward } from "../formatter.js";
 import { getXYWebSocketManager } from "../client.js";
 import { getCurrentMessageId, getCurrentTaskId } from "../task-manager.js";
 import type { A2ACommand, CrossDeviceTaskResultEvent } from "../types.js";
@@ -12,6 +12,7 @@ type TargetDeviceInfo = {
   deviceId: string;
   deviceName: string;
   deviceType: string;
+  networkId?: string;
 };
 
 function stringifyForLog(value: unknown): string {
@@ -49,10 +50,13 @@ function normalizeTargetDeviceInfo(value: unknown): TargetDeviceInfo | null {
     return null;
   }
 
+  const networkId = typeof candidate.networkId === "string" ? candidate.networkId.trim() : undefined;
+
   return {
     deviceId,
     deviceName,
     deviceType,
+    networkId: networkId || undefined,
   };
 }
 
@@ -118,6 +122,10 @@ export const sendCrossDeviceTaskTool: any = {
             type: "string",
             description: "目标设备类型编号，例如 00B、00C、011、00E。",
           },
+          networkId: {
+            type: "string",
+            description: "目标设备的软总线网络 ID，用于跨设备指令转发路由。",
+          },
         },
         required: ["deviceId", "deviceName", "deviceType"],
       },
@@ -130,6 +138,7 @@ export const sendCrossDeviceTaskTool: any = {
 
     const query = typeof params.query === "string" ? params.query.trim() : "";
     const targetDeviceInfo = normalizeTargetDeviceInfo(params.targetDeviceInfo);
+    console.log(`[IF610] send_cross_device_task invoked, query=${query}`);
 
     if (!query || !targetDeviceInfo) {
       console.log(`${LOG_TAG} invalid params, query=${query}, targetDeviceInfo=${stringifyForLog(params.targetDeviceInfo)}`);
@@ -168,6 +177,7 @@ export const sendCrossDeviceTaskTool: any = {
     );
     console.log(`${LOG_TAG} selected targetDeviceInfo=${stringifyForLog(targetDeviceInfo)}`);
     console.log(`${LOG_TAG} prepared UnifiedDistribute command=${stringifyForLog(command)}`);
+    console.log(`[IF610] targetDeviceInfo: deviceId=${targetDeviceInfo.deviceId}, networkId=${targetDeviceInfo.networkId ?? "N/A"}, session networkId=${sessionContext.networkId ?? "N/A"}`);
 
     return new Promise((resolve) => {
       let timeout: NodeJS.Timeout;
@@ -196,6 +206,35 @@ export const sendCrossDeviceTaskTool: any = {
           console.log(`${LOG_TAG} ignoring result for sessionId=${event.sessionId}`);
           return;
         }
+
+        // 🔑 收到远端结果后，自动构建 directivesForward 下发给 PC 端侧
+        const directivesNetworkId = targetDeviceInfo.networkId ?? sessionContext.networkId ?? "";
+        console.log(
+          `${LOG_TAG} sending directivesForward to PC, networkId=${directivesNetworkId}, code=${event.code}`,
+        );
+        console.log(
+          `[IF610] directivesForward triggered: sessionId=${sessionId}, taskId=${taskId}, networkId=${directivesNetworkId}, code=${event.code}, status=${event.status}`,
+        );
+        sendDirectivesForward({
+          config,
+          sessionId,
+          taskId,
+          messageId,
+          agentId: config.agentId,
+          networkId: directivesNetworkId,
+          resultCode: event.code,
+          resultMessage: event.message,
+        })
+          .then(() => {
+            console.log(`${LOG_TAG} directivesForward sent successfully`);
+            console.log(`[IF610] directivesForward sent OK`);
+          })
+          .catch((dfError) => {
+            console.error(
+              `${LOG_TAG} failed to send directivesForward: ${dfError instanceof Error ? dfError.message : String(dfError)}`,
+            );
+            console.error(`[IF610] directivesForward send FAILED: ${dfError instanceof Error ? dfError.message : String(dfError)}`);
+          });
 
         finish({
           success: event.status === "success",

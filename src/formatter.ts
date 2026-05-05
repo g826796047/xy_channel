@@ -465,3 +465,111 @@ export async function sendTriggerResponse(params: SendTriggerResponseParams): Pr
   await wsManager.sendMessage(sessionId, outboundMessage);
   log(`[TRIGGER_RESPONSE] Trigger response sent successfully`);
 }
+
+// ============================================================================
+// DirectivesForward — 跨设备执行结果下发
+// ============================================================================
+
+const DIRECTIVES_FORWARD_LOG_TAG = "[DirectivesForward]";
+
+/**
+ * Parameters for building a directivesForward command.
+ */
+export interface BuildDirectivesForwardParams {
+  agentId: string;
+  networkId: string;
+  resultCode: string;
+  resultMessage: string;
+}
+
+/**
+ * Build a directivesForward A2A command.
+ * DistributionStatus is always the first directive to tell the device side
+ * that this is a cross-device distribution scenario.
+ */
+export function buildDirectivesForwardCommand(params: BuildDirectivesForwardParams): A2ACommand {
+  const { agentId, networkId, resultCode, resultMessage } = params;
+
+  console.log(`[IF610] buildDirectivesForwardCommand: agentId=${agentId}, networkId=${networkId}, code=${resultCode}`);
+  console.log(`[IF610] buildDirectivesForwardCommand: message=${resultMessage.length > 200 ? resultMessage.slice(0, 200) + "..." : resultMessage}`);
+
+  return {
+    header: {
+      namespace: "DistributionInteraction",
+      name: "DirectivesForward",
+    },
+    payload: {
+      executeType: "directivesForward",
+      directives: [
+        {
+          header: {
+            name: "DistributionStatus",
+            namespace: "DistributionInteraction",
+          },
+          payload: {
+            agentId,
+            isDistributed: true,
+            networkId,
+            distributionType: "softbus",
+            distributionExecutePolicy: "backgroundExecution",
+          },
+        },
+        {
+          header: {
+            namespace: "DistributionInteraction",
+            name: "CrossTaskExecuteResult",
+          },
+          payload: {
+            code: resultCode,
+            message: resultMessage,
+          },
+        },
+      ],
+    },
+  };
+}
+
+/**
+ * Parameters for sending a directivesForward command.
+ */
+export interface SendDirectivesForwardParams {
+  config: XYChannelConfig;
+  sessionId: string;
+  taskId: string;
+  messageId: string;
+  agentId: string;
+  networkId: string;
+  resultCode: string;
+  resultMessage: string;
+}
+
+/**
+ * Build and send a directivesForward command to the PC device side.
+ */
+export async function sendDirectivesForward(params: SendDirectivesForwardParams): Promise<void> {
+  const { config, sessionId, taskId, messageId, agentId, networkId, resultCode, resultMessage } = params;
+
+  const runtime = getXYRuntime() as any;
+  const log = runtime?.log ?? console.log;
+  const error = runtime?.error ?? console.error;
+
+  const command = buildDirectivesForwardCommand({
+    agentId,
+    networkId,
+    resultCode,
+    resultMessage,
+  });
+
+  log(`${DIRECTIVES_FORWARD_LOG_TAG} built directivesForward command, networkId=${networkId}, code=${resultCode}`);
+
+  await sendCommand({
+    config,
+    sessionId,
+    taskId,
+    messageId,
+    command,
+  });
+
+  log(`${DIRECTIVES_FORWARD_LOG_TAG} sent successfully`);
+  console.log(`[IF610] sendDirectivesForward: sent to sessionId=${sessionId}, taskId=${taskId}`);
+}

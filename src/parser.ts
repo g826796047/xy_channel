@@ -119,6 +119,25 @@ export function extractDeviceType(parts: A2AMessagePart[]): string | null {
 }
 
 /**
+ * Extract networkId from message parts.
+ * Looks for networkId in data parts under variables.systemVariables.network_id
+ * Used for cross-device softbus routing in directivesForward.
+ */
+export function extractNetworkId(parts: A2AMessagePart[]): string | null {
+  for (const part of parts) {
+    if (part.kind === "data" && part.data) {
+      const networkId = part.data.variables?.systemVariables?.network_id;
+      if (networkId && typeof networkId === "string") {
+        console.log(`[IF610] extractNetworkId found network_id=${networkId}`);
+        return networkId;
+      }
+    }
+  }
+  console.log(`[IF610] extractNetworkId: network_id not found in message parts`);
+  return null;
+}
+
+/**
  * Extract Trigger event data from message parts.
  * Looks for Trigger events with pushDataId in data parts.
  */
