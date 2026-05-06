@@ -12,24 +12,26 @@ const LOG_TAG = "[GetPCDeviceList]";
 const DISCOVER_DEVICES_STATUS_TEXT = "正在查询设备列表...";
 
 const DEVICE_TYPE_LABELS: Record<string, string> = {
-  "00E": "phone",
-  "011": "tablet",
-  "00B": "desktop",
-  "00C": "laptop",
+  "14": "phone",
+  "17": "pad",
+  "131": "car",
+  "2607": "PC",
 };
 
 type RawDeviceInfo = {
   deviceId?: unknown;
+  networkId?: unknown;
   deviceName?: unknown;
   deviceType?: unknown;
+  deviceTypeId?: unknown;
   nearby?: unknown;
   [key: string]: unknown;
 };
 
 type NormalizedDeviceInfo = {
-  deviceId: string;
+  networkId: string;
   deviceName: string;
-  deviceType: string;
+  deviceTypeId: string;
   deviceTypeLabel: string;
   nearby: boolean;
   rawDevice: RawDeviceInfo;
@@ -51,12 +53,23 @@ function normalizeDevices(rawDevices: unknown): NormalizedDeviceInfo[] {
   return rawDevices
     .filter((item): item is RawDeviceInfo => Boolean(item) && typeof item === "object")
     .map((device) => {
-      const deviceType = typeof device.deviceType === "string" ? device.deviceType : "";
+      const networkId =
+        typeof device.networkId === "string"
+          ? device.networkId
+          : typeof device.deviceId === "string"
+            ? device.deviceId
+            : "";
+      const deviceTypeId =
+        typeof device.deviceTypeId === "string"
+          ? device.deviceTypeId
+          : typeof device.deviceType === "string"
+            ? device.deviceType
+            : "";
       return {
-        deviceId: typeof device.deviceId === "string" ? device.deviceId : "",
+        networkId,
         deviceName: typeof device.deviceName === "string" ? device.deviceName : "",
-        deviceType,
-        deviceTypeLabel: DEVICE_TYPE_LABELS[deviceType] ?? "unknown",
+        deviceTypeId,
+        deviceTypeLabel: DEVICE_TYPE_LABELS[deviceTypeId] ?? "unknown",
         nearby: device.nearby === true,
         rawDevice: device,
       };
@@ -67,15 +80,15 @@ function inferDesiredDeviceTypes(query: string): string[] {
   const normalized = query.toLowerCase();
 
   if (/(pc|computer|desktop|laptop|notebook)/iu.test(normalized) || /电脑|台式机|笔记本/iu.test(query)) {
-    return ["00B", "00C"];
+    return ["2607"];
   }
 
   if (/(tablet|pad|ipad)/iu.test(normalized) || /平板/iu.test(query)) {
-    return ["011"];
+    return ["17"];
   }
 
   if (/(phone|mobile)/iu.test(normalized) || /手机/iu.test(query)) {
-    return ["00E"];
+    return ["14"];
   }
 
   return [];
@@ -97,12 +110,12 @@ function recommendDevices(
       recommendationReason: "No explicit target device type was detected in the query.",
       needsUserSelection: devices.length > 1,
       selectionPrompt: devices.length > 1
-        ? "The query does not identify a unique device type. Ask the user to choose a target device by deviceName or deviceId before sending a cross-device task."
+        ? "The query does not identify a unique device type. Ask the user to choose a target device by deviceName or networkId before sending a cross-device task."
         : "",
     };
   }
 
-  const matches = devices.filter((device) => desiredTypes.includes(device.deviceType));
+  const matches = devices.filter((device) => desiredTypes.includes(device.deviceTypeId));
   if (matches.length === 0) {
     return {
       recommendedDevices: [],
@@ -118,7 +131,7 @@ function recommendDevices(
     recommendationReason: `Matched requested device type(s): ${desiredTypes.join(", ")}. Nearby devices are ranked first.`,
     needsUserSelection: sortedMatches.length > 1,
     selectionPrompt: sortedMatches.length > 1
-      ? "Multiple candidate devices match the user request. Ask the user to choose one target device by deviceName or deviceId before calling send_cross_device_task."
+      ? "Multiple candidate devices match the user request. Ask the user to choose one target device by deviceName or networkId before calling send_cross_device_task."
       : "",
   };
 }

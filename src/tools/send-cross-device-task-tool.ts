@@ -9,9 +9,9 @@ const LOG_TAG = "[SendPcDeviceTask]";
 const CROSS_DEVICE_TASK_TIMEOUT_MS = 120_000;
 
 type TargetDeviceInfo = {
-  deviceId: string;
+  networkId: string;
   deviceName: string;
-  deviceType: string;
+  deviceTypeId: string;
 };
 
 function stringifyForLog(value: unknown): string {
@@ -41,18 +41,28 @@ function normalizeTargetDeviceInfo(value: unknown): TargetDeviceInfo | null {
   }
 
   const candidate = value as Record<string, unknown>;
-  const deviceId = typeof candidate.deviceId === "string" ? candidate.deviceId.trim() : "";
+  const networkId =
+    typeof candidate.networkId === "string"
+      ? candidate.networkId.trim()
+      : typeof candidate.deviceId === "string"
+        ? candidate.deviceId.trim()
+        : "";
   const deviceName = typeof candidate.deviceName === "string" ? candidate.deviceName.trim() : "";
-  const deviceType = typeof candidate.deviceType === "string" ? candidate.deviceType.trim() : "";
+  const deviceTypeId =
+    typeof candidate.deviceTypeId === "string"
+      ? candidate.deviceTypeId.trim()
+      : typeof candidate.deviceType === "string"
+        ? candidate.deviceType.trim()
+        : "";
 
-  if (!deviceId || !deviceName || !deviceType) {
+  if (!networkId || !deviceName || !deviceTypeId) {
     return null;
   }
 
   return {
-    deviceId,
+    networkId,
     deviceName,
-    deviceType,
+    deviceTypeId,
   };
 }
 
@@ -106,20 +116,20 @@ export const sendCrossDeviceTaskTool: any = {
         type: "object",
         description: "模型从 discover_cross_devices 返回列表中选定的唯一目标设备。",
         properties: {
-          deviceId: {
+          networkId: {
             type: "string",
-            description: "目标设备 ID。",
+            description: "目标设备标识 networkId。",
           },
           deviceName: {
             type: "string",
             description: "目标设备名称。",
           },
-          deviceType: {
+          deviceTypeId: {
             type: "string",
-            description: "目标设备类型编号，例如 00B、00C、011、00E。",
+            description: "目标设备类型编号 deviceTypeId，例如 14、17、131、2607。",
           },
         },
-        required: ["deviceId", "deviceName", "deviceType"],
+        required: ["networkId", "deviceName", "deviceTypeId"],
       },
     },
     required: ["query", "targetDeviceInfo"],
@@ -136,7 +146,7 @@ export const sendCrossDeviceTaskTool: any = {
       return buildResultText({
         success: false,
         code: "",
-        message: "Missing required parameters: query and targetDeviceInfo.deviceId/deviceName/deviceType.",
+        message: "Missing required parameters: query and targetDeviceInfo.networkId/deviceName/deviceTypeId.",
         fileUrl: "",
         rawEvent: null,
         cardInstructionStatus: "reserved_not_implemented",

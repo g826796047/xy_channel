@@ -603,6 +603,7 @@ export class XYWebSocketManager extends EventEmitter {
     try {
       const messageStr = data.toString();
       console.log(`[WS-RECV] Raw message frame, size: ${messageStr.length} characters`);
+      console.log(`[GYJ666]received raw websocket message`, messageStr);
       if (messageStr.includes("isDistributed") || messageStr.includes("AsrRecognize")) {
         console.log(`${RUN_CROSS_TASK_LOG_TAG} received raw websocket message`, messageStr);
       }
