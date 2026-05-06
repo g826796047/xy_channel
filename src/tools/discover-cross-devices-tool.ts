@@ -32,6 +32,7 @@ type NormalizedDeviceInfo = {
   deviceType: string;
   deviceTypeLabel: string;
   nearby: boolean;
+  networkId: string;
   rawDevice: RawDeviceInfo;
 };
 
@@ -58,6 +59,7 @@ function normalizeDevices(rawDevices: unknown): NormalizedDeviceInfo[] {
         deviceType,
         deviceTypeLabel: DEVICE_TYPE_LABELS[deviceType] ?? "unknown",
         nearby: device.nearby === true,
+        networkId: typeof device.networkId === "string" ? device.networkId : "",
         rawDevice: device,
       };
     });
@@ -252,6 +254,9 @@ export const discoverCrossDevicesTool: any = {
         const recommendation = recommendDevices(query, devices);
         console.log(
           `${LOG_TAG} parsed UploadExeResult, success=${success}, code=${String(code)}, devices=${devices.length}, recommended=${recommendation.recommendedDevices.length}`,
+        );
+        console.log(
+          `[IF610] discover: found ${devices.length} devices, networkIds=[${devices.map((d) => `${d.deviceName}(${d.networkId || "empty"})`).join(", ")}]`,
         );
 
         if (!success) {

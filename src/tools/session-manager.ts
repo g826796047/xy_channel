@@ -14,6 +14,7 @@ export interface SessionContext {
   messageId: string;
   agentId: string;
   deviceType?: string;
+  networkId?: string;
 }
 
 interface SessionContextWithRef extends SessionContext {

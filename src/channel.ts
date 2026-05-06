@@ -41,6 +41,7 @@ import { logger } from "./utils/logger.js";
 export const xyPlugin: ChannelPlugin = {
   id: "xiaoyi-channel",
 
+  
   meta: {
     id: "xiaoyi-channel",
     label: "Xiaoyi Channel",
