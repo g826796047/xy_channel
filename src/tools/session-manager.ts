@@ -1,7 +1,7 @@
 // Session manager for XY tool context
 // Stores active session contexts that tools can access
 import { AsyncLocalStorage } from "async_hooks";
-import type { XYChannelConfig } from "../types.js";
+import type { RunCrossTaskContext, XYChannelConfig } from "../types.js";
 import { logger } from "../utils/logger.js";
 import { configManager } from "../utils/config-manager.js";
 import { toolCallNudgeManager } from "../utils/tool-call-nudge-manager.js";
@@ -14,6 +14,7 @@ export interface SessionContext {
   messageId: string;
   agentId: string;
   deviceType?: string;
+  runCrossTaskContext?: RunCrossTaskContext;
 }
 
 interface SessionContextWithRef extends SessionContext {

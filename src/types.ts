@@ -95,6 +95,14 @@ export interface CrossDeviceTaskResultEvent {
   rawEvent: any;
 }
 
+export interface RunCrossTaskContext {
+  agentId: string;
+  isDistributed: boolean;
+  networkId: string;
+  isSupportAgent: boolean;
+  rawClientContext: any;
+}
+
 // ============================================================================
 // Response/Event Types
 // ============================================================================

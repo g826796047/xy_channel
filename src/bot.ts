@@ -3,7 +3,7 @@ import type { ClawdbotConfig, RuntimeEnv, ReplyPayload } from "openclaw/plugin-s
 import { getXYRuntime } from "./runtime.js";
 import { setCachedContext } from "./steer-injector.js";
 import { createXYReplyDispatcher } from "./reply-dispatcher.js";
-import { parseA2AMessage, extractTextFromParts, extractFileParts, extractPushId, extractDeviceType, extractTriggerData, isClearContextMessage, isTasksCancelMessage } from "./parser.js";
+import { parseA2AMessage, extractTextFromParts, extractFileParts, extractPushId, extractDeviceType, extractTriggerData, extractRunCrossTaskContext, isClearContextMessage, isTasksCancelMessage } from "./parser.js";
 import { downloadFilesFromParts } from "./file-download.js";
 import { resolveXYConfig } from "./config.js";
 import { sendStatusUpdate, sendClearContextResponse, sendTasksCancelResponse, sendA2AResponse } from "./formatter.js";
@@ -27,6 +27,8 @@ import {
   hasActiveTask,
 } from "./task-manager.js";
 import type { A2AJsonRpcRequest } from "./types.js";
+
+const RUN_CROSS_TASK_LOG_TAG = "[RunCrossTask]";
 
 /**
  * Parameters for handling an XY message.
@@ -96,6 +98,17 @@ export async function handleXYMessage(params: HandleXYMessageParams): Promise<vo
 
     // Parse the A2A message (for regular messages)
     const parsed = parseA2AMessage(message);
+    const runCrossTaskContext = extractRunCrossTaskContext(parsed.parts);
+    if (runCrossTaskContext) {
+      console.log(`${RUN_CROSS_TASK_LOG_TAG} detected distributed PC query`, {
+        sessionId: parsed.sessionId,
+        taskId: parsed.taskId,
+        messageId: parsed.messageId,
+        agentId: runCrossTaskContext.agentId,
+        networkId: runCrossTaskContext.networkId,
+        isSupportAgent: runCrossTaskContext.isSupportAgent,
+      });
+    }
 
     // ========== 检测 Trigger 消息 ==========
     // 如果消息中包含 Trigger 事件数据，直接返回 pushData 内容，不走正常流程
@@ -339,6 +352,7 @@ export async function handleXYMessage(params: HandleXYMessageParams): Promise<vo
       messageId: parsed.messageId,
       agentId: route.accountId,
       deviceType,
+      runCrossTaskContext: runCrossTaskContext ?? undefined,
     };
 
     log(`[BOT-DISPATCH] ⏳ withReplyDispatcher starting, sessionKey=${route.sessionKey}`);

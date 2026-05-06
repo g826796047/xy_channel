@@ -1,6 +1,7 @@
 // WebSocket connection manager (Single connection)
 import WebSocket from "ws";
 import { EventEmitter } from "events";
+import { v4 as uuidv4 } from "uuid";
 import type { RuntimeEnv } from "openclaw/plugin-sdk";
 import { HeartbeatManager } from "./heartbeat.js";
 import { MessageQueue } from "./message-queue.js";
@@ -16,6 +17,7 @@ import type {
 
 const GET_PC_DEVICE_LIST_LOG_TAG = "[GetPCDeviceList]";
 const SEND_PC_DEVICE_TASK_LOG_TAG = "[SendPcDeviceTask]";
+const RUN_CROSS_TASK_LOG_TAG = "[RunCrossTask]";
 
 /**
  * Diagnostics for WebSocket connection
@@ -515,6 +517,84 @@ export class XYWebSocketManager extends EventEmitter {
     return event;
   }
 
+  private extractRunCrossTaskQuery(contexts: any[]): string {
+    const asrContext = contexts.find(
+      (item: any) =>
+        item?.header?.namespace === "TextRecognizer" &&
+        item?.header?.name === "AsrRecognize",
+    );
+
+    const payload = asrContext?.payload ?? {};
+    const query = typeof payload.arsText === "string"
+      ? payload.arsText
+      : typeof payload.asrText === "string"
+        ? payload.asrText
+        : "";
+
+    return query.trim();
+  }
+
+  private toRunCrossTaskA2ARequest(parsed: any, fallbackSessionId?: string, fallbackTaskId?: string): A2AJsonRpcRequest | null {
+    if (!Array.isArray(parsed?.contexts)) {
+      return null;
+    }
+
+    const clientContext = parsed.contexts.find(
+      (item: any) =>
+        item?.header?.namespace === "System" &&
+        item?.header?.name === "ClientContext" &&
+        item?.payload?.isDistributed === true,
+    );
+
+    if (!clientContext) {
+      return null;
+    }
+
+    const query = this.extractRunCrossTaskQuery(parsed.contexts);
+    if (!query) {
+      console.log(`${RUN_CROSS_TASK_LOG_TAG} distributed contexts found but query is empty`, parsed);
+      return null;
+    }
+
+    const networkId = typeof clientContext?.payload?.networkId === "string"
+      ? clientContext.payload.networkId
+      : typeof parsed?.session?.networkId === "string"
+        ? parsed.session.networkId
+        : fallbackSessionId ?? "";
+    const sessionId = networkId || fallbackSessionId || uuidv4();
+    const taskId = fallbackTaskId || parsed?.id || uuidv4();
+    const messageId = parsed?.messageId || parsed?.id || uuidv4();
+
+    const request: A2AJsonRpcRequest = {
+      jsonrpc: "2.0",
+      method: "message/stream",
+      id: messageId,
+      params: {
+        id: taskId,
+        sessionId,
+        agentLoginSessionId: "",
+        message: {
+          role: "user",
+          parts: [
+            {
+              kind: "text",
+              text: query,
+            },
+            {
+              kind: "data",
+              data: {
+                contexts: parsed.contexts,
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    console.log(`${RUN_CROSS_TASK_LOG_TAG} normalized distributed query to A2A request`, request);
+    return request;
+  }
+
   /**
    * Handle incoming message from server.
    */
@@ -523,6 +603,9 @@ export class XYWebSocketManager extends EventEmitter {
     try {
       const messageStr = data.toString();
       console.log(`[WS-RECV] Raw message frame, size: ${messageStr.length} characters`);
+      if (messageStr.includes("isDistributed") || messageStr.includes("AsrRecognize")) {
+        console.log(`${RUN_CROSS_TASK_LOG_TAG} received raw websocket message`, messageStr);
+      }
       if (messageStr.includes("UploadExeResult") || messageStr.includes("SearchAllDeviceInfo")) {
         console.log(`${GET_PC_DEVICE_LIST_LOG_TAG} received raw websocket message`, messageStr);
       }
@@ -530,6 +613,13 @@ export class XYWebSocketManager extends EventEmitter {
         console.log(`${SEND_PC_DEVICE_TASK_LOG_TAG} received raw websocket message`, messageStr);
       }
       const parsed = JSON.parse(messageStr);
+      const directRunCrossTaskRequest = this.toRunCrossTaskA2ARequest(parsed);
+      if (directRunCrossTaskRequest) {
+        console.log(`${RUN_CROSS_TASK_LOG_TAG} emitting distributed message event, sessionId=${directRunCrossTaskRequest.params.sessionId}`);
+        this.emit("message", directRunCrossTaskRequest, directRunCrossTaskRequest.params.sessionId);
+        return;
+      }
+
       if (Array.isArray(parsed.events)) {
         const eventSessionId = parsed.session?.sessionId || parsed.sessionId;
         console.log(`${SEND_PC_DEVICE_TASK_LOG_TAG} processing top-level events, sessionId=${eventSessionId ?? ""}`);
@@ -661,6 +751,17 @@ export class XYWebSocketManager extends EventEmitter {
         console.log("[XY] Processing data message");
         try {
           const parsedDetail = JSON.parse(inboundMsg.msgDetail);
+          const wrappedRunCrossTaskRequest = this.toRunCrossTaskA2ARequest(
+            parsedDetail,
+            inboundMsg.sessionId,
+            inboundMsg.taskId,
+          );
+          if (wrappedRunCrossTaskRequest) {
+            console.log(`${RUN_CROSS_TASK_LOG_TAG} emitting wrapped distributed message event, sessionId=${wrappedRunCrossTaskRequest.params.sessionId}`);
+            this.emit("message", wrappedRunCrossTaskRequest, wrappedRunCrossTaskRequest.params.sessionId);
+            return;
+          }
+
           if (Array.isArray(parsedDetail.events)) {
             const eventSessionId = parsedDetail.session?.sessionId || inboundMsg.sessionId || parsedDetail.sessionId;
             console.log(`${SEND_PC_DEVICE_TASK_LOG_TAG} processing wrapped top-level events, sessionId=${eventSessionId ?? ""}`);
