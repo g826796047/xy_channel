@@ -517,53 +517,35 @@ export class XYWebSocketManager extends EventEmitter {
     return event;
   }
 
-  private extractRunCrossTaskQuery(contexts: any[]): string {
-    const asrContext = contexts.find(
-      (item: any) =>
-        item?.header?.namespace === "TextRecognizer" &&
-        item?.header?.name === "AsrRecognize",
-    );
-
-    const payload = asrContext?.payload ?? {};
-    const query = typeof payload.arsText === "string"
-      ? payload.arsText
-      : typeof payload.asrText === "string"
-        ? payload.asrText
-        : "";
-
-    return query.trim();
-  }
-
   private toRunCrossTaskA2ARequest(parsed: any, fallbackSessionId?: string, fallbackTaskId?: string): A2AJsonRpcRequest | null {
-    if (!Array.isArray(parsed?.contexts)) {
+    const networkId = typeof parsed?.networkId === "string" ? parsed.networkId.trim() : "";
+    if (!networkId) {
       return null;
     }
 
-    const clientContext = parsed.contexts.find(
-      (item: any) =>
-        item?.header?.namespace === "System" &&
-        item?.header?.name === "ClientContext" &&
-        item?.payload?.isDistributed === true,
+    const originalParts = Array.isArray(parsed?.params?.message?.parts)
+      ? parsed.params.message.parts
+      : [];
+    const hasTextQuery = originalParts.some(
+      (part: any) => part?.kind === "text" && typeof part?.text === "string" && part.text.trim().length > 0,
     );
-
-    if (!clientContext) {
+    if (!hasTextQuery) {
+      console.log(`${RUN_CROSS_TASK_LOG_TAG} top-level networkId found but text query is empty`, parsed);
       return null;
     }
 
-    const query = this.extractRunCrossTaskQuery(parsed.contexts);
-    if (!query) {
-      console.log(`${RUN_CROSS_TASK_LOG_TAG} distributed contexts found but query is empty`, parsed);
-      return null;
-    }
-
-    const networkId = typeof clientContext?.payload?.networkId === "string"
-      ? clientContext.payload.networkId
-      : typeof parsed?.session?.networkId === "string"
-        ? parsed.session.networkId
-        : fallbackSessionId ?? "";
-    const sessionId = networkId || fallbackSessionId || uuidv4();
-    const taskId = fallbackTaskId || parsed?.id || uuidv4();
-    const messageId = parsed?.messageId || parsed?.id || uuidv4();
+    const topLevelSessionId = typeof parsed?.sessionId === "string" ? parsed.sessionId : "";
+    const topLevelAgentId = typeof parsed?.agentId === "string" ? parsed.agentId : "";
+    const sessionId = topLevelSessionId || parsed?.params?.sessionId || fallbackSessionId || networkId;
+    const taskId = parsed?.params?.id || fallbackTaskId || parsed?.id || uuidv4();
+    const messageId = parsed?.id || parsed?.messageId || uuidv4();
+    const runCrossTaskContext = {
+      agentId: topLevelAgentId,
+      sessionId: topLevelSessionId,
+      networkId,
+      isDistributed: true,
+      isSupportAgent: true,
+    };
 
     const request: A2AJsonRpcRequest = {
       jsonrpc: "2.0",
@@ -576,14 +558,11 @@ export class XYWebSocketManager extends EventEmitter {
         message: {
           role: "user",
           parts: [
-            {
-              kind: "text",
-              text: query,
-            },
+            ...originalParts,
             {
               kind: "data",
               data: {
-                contexts: parsed.contexts,
+                runCrossTaskContext,
               },
             },
           ],
@@ -591,7 +570,13 @@ export class XYWebSocketManager extends EventEmitter {
       },
     };
 
-    console.log(`${RUN_CROSS_TASK_LOG_TAG} normalized distributed query to A2A request`, request);
+    console.log(`${RUN_CROSS_TASK_LOG_TAG} normalized PC cross-task query to A2A request`, {
+      agentId: topLevelAgentId,
+      sessionId,
+      networkId,
+      taskId,
+      messageId,
+    });
     return request;
   }
 
@@ -604,7 +589,8 @@ export class XYWebSocketManager extends EventEmitter {
       const messageStr = data.toString();
       console.log(`[WS-RECV] Raw message frame, size: ${messageStr.length} characters`);
       console.log(`[GYJ666]received raw websocket message`, messageStr);
-      if (messageStr.includes("isDistributed") || messageStr.includes("AsrRecognize")) {
+      if (messageStr.includes("\"networkId\"")) {
+        console.log(`${RUN_CROSS_TASK_LOG_TAG} PC cross-task inbound candidate received at websocket entry`);
         console.log(`${RUN_CROSS_TASK_LOG_TAG} received raw websocket message`, messageStr);
       }
       if (messageStr.includes("UploadExeResult") || messageStr.includes("SearchAllDeviceInfo")) {

@@ -97,10 +97,11 @@ export interface CrossDeviceTaskResultEvent {
 
 export interface RunCrossTaskContext {
   agentId: string;
+  sessionId: string;
   isDistributed: boolean;
   networkId: string;
   isSupportAgent: boolean;
-  rawClientContext: any;
+  rawContext: any;
 }
 
 // ============================================================================

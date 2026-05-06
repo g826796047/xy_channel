@@ -118,40 +118,30 @@ export function extractDeviceType(parts: A2AMessagePart[]): string | null {
   return null;
 }
 
-/**
- * Extract distributed cross-device task context from data parts.
- * PC-side cross tasks are normalized into an A2A message with original
- * contexts preserved under data.contexts.
- */
 export function extractRunCrossTaskContext(parts: A2AMessagePart[]): RunCrossTaskContext | null {
   for (const part of parts) {
     if (part.kind !== "data" || !part.data) {
       continue;
     }
 
-    const contexts = part.data.contexts;
-    if (!Array.isArray(contexts)) {
+    const context = part.data.runCrossTaskContext;
+    if (!context || typeof context !== "object") {
       continue;
     }
 
-    const clientContext = contexts.find(
-      (item: any) =>
-        item?.header?.namespace === "System" &&
-        item?.header?.name === "ClientContext" &&
-        item?.payload?.isDistributed === true,
-    );
-
-    if (!clientContext) {
+    const payload = context as Record<string, unknown>;
+    const networkId = typeof payload.networkId === "string" ? payload.networkId : "";
+    if (!networkId) {
       continue;
     }
 
-    const payload = clientContext.payload ?? {};
     return {
       agentId: typeof payload.agentId === "string" ? payload.agentId : "",
-      isDistributed: payload.isDistributed === true,
-      networkId: typeof payload.networkId === "string" ? payload.networkId : "",
+      sessionId: typeof payload.sessionId === "string" ? payload.sessionId : "",
+      isDistributed: true,
+      networkId,
       isSupportAgent: payload.isSupportAgent === true,
-      rawClientContext: clientContext,
+      rawContext: context,
     };
   }
 

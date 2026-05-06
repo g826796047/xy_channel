@@ -241,14 +241,20 @@ export interface SendCommandParams {
   sessionId: string;
   taskId: string;
   messageId: string;
-  command: A2ACommand;
+  command?: A2ACommand;
+  commands?: A2ACommand[];
 }
 
 /**
  * Send a command as an artifact update (final=false).
  */
 export async function sendCommand(params: SendCommandParams): Promise<void> {
-  const { config, sessionId, taskId, messageId, command } = params;
+  const { config, sessionId, taskId, messageId } = params;
+  const commands = params.commands ?? (params.command ? [params.command] : []);
+
+  if (commands.length === 0) {
+    throw new Error("sendCommand requires command or commands.");
+  }
 
   const runtime = getXYRuntime() as any;
   const log = runtime?.log ?? console.log;
@@ -268,7 +274,7 @@ export async function sendCommand(params: SendCommandParams): Promise<void> {
         {
           kind: "data",
           data: {
-            commands: [command],
+            commands,
           },
         },
       ],
@@ -292,15 +298,17 @@ export async function sendCommand(params: SendCommandParams): Promise<void> {
     msgDetail: JSON.stringify(jsonRpcResponse),
   };
 
-  if (command?.payload?.executeParam?.intentName === "SearchAllDeviceInfo") {
+  if (commands.some((command) => command?.payload?.executeParam?.intentName === "SearchAllDeviceInfo")) {
     console.log(`${GET_PC_DEVICE_LIST_LOG_TAG} sending command outbound message`, outboundMessage);
   }
-  if (command?.header?.namespace === "DistributionInteraction" && command?.header?.name === "UnifiedDistribute") {
+  if (commands.some((command) => command?.header?.namespace === "DistributionInteraction" && command?.header?.name === "UnifiedDistribute")) {
     console.log(`${SEND_PC_DEVICE_TASK_LOG_TAG} sending command outbound message`, outboundMessage);
   }
   if (
-    command?.header?.namespace === "DistributionInteraction" &&
-    (command?.header?.name === "DistributionStatus" || command?.header?.name === "CrossTaskExecuteResult")
+    commands.some((command) =>
+      command?.header?.namespace === "DistributionInteraction" &&
+      (command?.header?.name === "DistributionStatus" || command?.header?.name === "CrossTaskExecuteResult")
+    )
   ) {
     console.log(`${RUN_CROSS_TASK_LOG_TAG} sending command outbound message`, outboundMessage);
   }

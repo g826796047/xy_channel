@@ -135,25 +135,19 @@ async function sendRunCrossTaskResult(params: {
   const statusCommand = buildDistributionStatusCommand(context);
   const resultCommand = buildCrossTaskExecuteResultCommand(resultCode, resultMessage);
 
-  console.log(`${RUN_CROSS_TASK_LOG_TAG} sending DistributionStatus command`, statusCommand);
+  console.log(`${RUN_CROSS_TASK_LOG_TAG} sending merged cross-task result commands`, {
+    statusCommand,
+    resultCommand,
+  });
   await sendCommand({
     config,
     sessionId,
     taskId,
     messageId,
-    command: statusCommand,
+    commands: [statusCommand, resultCommand],
   });
 
-  console.log(`${RUN_CROSS_TASK_LOG_TAG} sending CrossTaskExecuteResult command`, resultCommand);
-  await sendCommand({
-    config,
-    sessionId,
-    taskId,
-    messageId,
-    command: resultCommand,
-  });
-
-  console.log(`${RUN_CROSS_TASK_LOG_TAG} cross task result commands sent`, {
+  console.log(`${RUN_CROSS_TASK_LOG_TAG} merged cross task result commands sent`, {
     sessionId,
     taskId,
     resultCode,
