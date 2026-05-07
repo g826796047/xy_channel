@@ -114,7 +114,7 @@ function buildDistributionStatusCommand(context: RunCrossTaskContext): A2AComman
 function buildCrossTaskExecuteResultCommand(code: string, message: string): A2ACommand {
   return {
     header: {
-      namespace: "AgentEvent",
+      namespace: "DistributionInteraction",
       name: "CrossTaskExecuteResult",
     },
     payload: {
