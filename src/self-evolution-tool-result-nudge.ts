@@ -4,7 +4,7 @@ import { selfEvolutionManager } from "./utils/self-evolution-manager.js";
 import { toolCallNudgeManager, TOOL_CALL_NUDGE_THRESHOLD } from "./utils/tool-call-nudge-manager.js";
 
 export const SELF_EVOLUTION_TOOL_COUNT_NUDGE_MESSAGE =
-  "[系统消息，非用户发言，无需主动告知用户] 当前任务已经调用了较多次数的工具。请先完成用户主要任务。完成后，如果这些工具调用暴露出稳定、通用、可复用的流程、排错经验或踩坑点，再考虑阅读 xiaoyi-self-evolution 技能进行评估；如果没有高价值候选经验，请忽略本提醒。";
+  "[系统消息] 当前任务已经调用了较多次数的工具。请在完成任务后，判断是否有稳定、通用、可复用的流程、排错经验或踩坑点，并考虑阅读 xiaoyi-self-evolution skill 启动自进化。";
 
 function shouldCountToolCall(toolName: string): boolean {
   if (toolName === "save_self_evolution_skill") {
