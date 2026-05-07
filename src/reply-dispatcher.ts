@@ -11,7 +11,7 @@ import path from "path";
 
 const RUN_CROSS_TASK_LOG_TAG = "[RunCrossTask]";
 const STUBBED_CROSS_TASK_RESULT_MESSAGE =
-  "https://nsp-vassistant-web-drcn-test.obs.cn-north-4.myhuaweicloud.cn/7d153b74-61fc-420f-8c7a-a316d71d2710.txt?X-Amz-Algoritm=AWS4-HMAC-SHA256&X-Amz-Credential=HPUAFVHM7YGRRFBX2RNH%2F20260507%2Fcn-north-4%2Fs3%2Faws4_request&X-Amz-Date=20260507T130643Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=f05a93a5c9203aaaf5bc45d076d0f36ba94df4cf597358b488381ab22cf5ea53";
+  "https://nsp-vassistant-web-drcn-test.obs.cn-north-4.myhuaweicloud.cn/7d153b74-61fc-420f-8c7a-a316d71d2710.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=HPUAFVHM7YGRRFBX2RNH%2F20260507%2Fcn-north-4%2Fs3%2Faws4_request&X-Amz-Date=20260507T130643Z&X-Amz-Expires=604800&X-Amz-SignedHeaders=host&X-Amz-Signature=f05a93a5c9203aaaf5bc45d076d0f36ba94df4cf597358b488381ab22cf5ea53";
 
 export interface CreateXYReplyDispatcherParams {
   cfg: ClawdbotConfig;
