@@ -6,6 +6,7 @@ import type { A2ACommand, CrossDeviceTaskResultEvent } from "../types.js";
 import { getCurrentSessionContext } from "./session-manager.js";
 
 const LOG_TAG = "[SendPcDeviceTask]";
+const SEND_CROSS_RESULT_LOG_TAG = "[SendCrossResult]";
 const CROSS_DEVICE_TASK_TIMEOUT_MS = 120_000;
 
 type TargetDeviceInfo = {
@@ -33,6 +34,51 @@ function buildResultText(result: Record<string, unknown>): {
       },
     ],
   };
+}
+
+function looksLikeFileUrl(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function buildCrossDeviceResult(params: {
+  success: boolean;
+  code: string;
+  message: string;
+  rawEvent: unknown;
+}): Record<string, unknown> {
+  const fileUrl = params.success && looksLikeFileUrl(params.message) ? params.message.trim() : "";
+  const result: Record<string, unknown> = {
+    success: params.success,
+    code: params.code,
+    message: params.message,
+    fileUrl,
+    rawEvent: params.rawEvent,
+  };
+
+  if (fileUrl) {
+    result.nextAction = "call_send_file_to_user_when_file_url";
+    result.recommendedTool = "send_file_to_user";
+    result.recommendedParams = {
+      fileRemoteUrls: [fileUrl],
+    };
+    result.instruction = "fileUrl/message 是文件 URL，下一步请调用 send_file_to_user，并传入 recommendedParams，将文件发送给用户。";
+  } else if (params.success) {
+    result.nextAction = "reply_to_user_with_message";
+    result.instruction = "message 不是文件 URL，请直接根据 message 内容向用户总结跨端任务结果。";
+  }
+
+  console.log(`${SEND_CROSS_RESULT_LOG_TAG} prepared model result, success=${params.success}, hasFileUrl=${Boolean(fileUrl)}, recommendedTool=${String(result.recommendedTool ?? "")}`);
+  return result;
 }
 
 function normalizeTargetDeviceInfo(value: unknown): TargetDeviceInfo | null {
@@ -102,9 +148,10 @@ export const sendCrossDeviceTaskTool: any = {
 1. 必须先调用 discover_cross_devices 获取设备列表。
 2. 根据用户原始需求选择唯一目标设备。
 3. 如果存在多个同类型候选设备，或无法判断目标设备，必须先询问用户选择设备，不要调用本工具。
-4. 只有当 targetDeviceInfo 中的 deviceId、deviceName、deviceType 都已明确时，才调用本工具。
+4. 只有当 targetDeviceInfo 中的 networkId、deviceName、deviceTypeId 都已明确时，才调用本工具。
 
-本工具会让端侧通过软总线把任务分发到目标设备执行，并等待端侧返回执行结果。当前阶段只透传端侧返回的 fileurl/message，不封装卡片指令。`,
+本工具只负责让端侧通过软总线把任务分发到目标设备执行，并等待端侧回传执行结果。
+本工具不会封装卡片指令，也不会自动发送文件给用户。工具成功返回后，如果 fileUrl/message 是文件 URL，模型必须继续调用 send_file_to_user，参数使用返回的 recommendedParams；如果不是文件 URL，则直接向用户总结 message。`,
   parameters: {
     type: "object",
     properties: {
@@ -149,7 +196,6 @@ export const sendCrossDeviceTaskTool: any = {
         message: "Missing required parameters: query and targetDeviceInfo.networkId/deviceName/deviceTypeId.",
         fileUrl: "",
         rawEvent: null,
-        cardInstructionStatus: "reserved_not_implemented",
       });
     }
 
@@ -162,7 +208,6 @@ export const sendCrossDeviceTaskTool: any = {
         message: "No active XY session found. Cross-device task can only run during an active conversation.",
         fileUrl: "",
         rawEvent: null,
-        cardInstructionStatus: "reserved_not_implemented",
       });
     }
 
@@ -188,6 +233,7 @@ export const sendCrossDeviceTaskTool: any = {
         clearTimeout(timeout);
         wsManager.off("cross-device-task-result", handler);
         console.log(`${LOG_TAG} cleaned up cross-device-task-result listener`);
+        console.log(`${SEND_CROSS_RESULT_LOG_TAG} cleaned up cross-device-task-result listener`);
       };
 
       const finish = (result: Record<string, unknown>) => {
@@ -196,36 +242,37 @@ export const sendCrossDeviceTaskTool: any = {
         }
         settled = true;
         console.log(`${LOG_TAG} finishing tool result=${stringifyForLog(result)}`);
+        console.log(`${SEND_CROSS_RESULT_LOG_TAG} returning model result=${stringifyForLog(result)}`);
         cleanup();
         resolve(buildResultText(result));
       };
 
       handler = (event: CrossDeviceTaskResultEvent) => {
         console.log(`${LOG_TAG} received cross-device-task-result=${stringifyForLog(event)}`);
+        console.log(`${SEND_CROSS_RESULT_LOG_TAG} received cross-device result, code=${event.code}, message=${event.message}, rawEvent=${stringifyForLog(event.rawEvent)}`);
         if (event.sessionId && event.sessionId !== sessionId) {
           console.log(`${LOG_TAG} ignoring result for sessionId=${event.sessionId}`);
+          console.log(`${SEND_CROSS_RESULT_LOG_TAG} ignoring cross-device result for sessionId=${event.sessionId}, currentSessionId=${sessionId}`);
           return;
         }
 
-        finish({
+        finish(buildCrossDeviceResult({
           success: event.status === "success",
           code: event.code,
           message: event.message,
-          fileUrl: event.message,
           rawEvent: event.rawEvent,
-          cardInstructionStatus: "reserved_not_implemented",
-        });
+        }));
       };
 
       timeout = setTimeout(() => {
-        console.log(`${LOG_TAG} timeout waiting System.ClientContext after ${CROSS_DEVICE_TASK_TIMEOUT_MS}ms`);
+        console.log(`${LOG_TAG} timeout waiting cross-device result after ${CROSS_DEVICE_TASK_TIMEOUT_MS}ms`);
+        console.log(`${SEND_CROSS_RESULT_LOG_TAG} timeout waiting cross-device result after ${CROSS_DEVICE_TASK_TIMEOUT_MS}ms`);
         finish({
           success: false,
           code: "",
           message: `Cross-device task timed out after ${CROSS_DEVICE_TASK_TIMEOUT_MS / 1000} seconds.`,
           fileUrl: "",
           rawEvent: null,
-          cardInstructionStatus: "reserved_not_implemented",
         });
       }, CROSS_DEVICE_TASK_TIMEOUT_MS);
 
@@ -265,7 +312,6 @@ export const sendCrossDeviceTaskTool: any = {
             message: `Failed to send cross-device task command: ${error instanceof Error ? error.message : String(error)}`,
             fileUrl: "",
             rawEvent: null,
-            cardInstructionStatus: "reserved_not_implemented",
           });
         });
     });

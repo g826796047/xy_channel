@@ -494,7 +494,7 @@ export class XYWebSocketManager extends EventEmitter {
   }
 
   private toCrossDeviceTaskResultEvent(item: any, sessionId: string): CrossDeviceTaskResultEvent | null {
-    if (item?.header?.namespace !== "System" || item?.header?.name !== "ClientContext") {
+    if (item?.header?.namespace !== "DistributionInteraction" || item?.header?.name !== "CrossTaskExecuteResult") {
       return null;
     }
 
@@ -511,7 +511,7 @@ export class XYWebSocketManager extends EventEmitter {
       rawEvent: item,
     };
 
-    console.log(`${SEND_PC_DEVICE_TASK_LOG_TAG} received System.ClientContext event`, item);
+    console.log(`${SEND_PC_DEVICE_TASK_LOG_TAG} received DistributionInteraction.CrossTaskExecuteResult event`, item);
     console.log(`${SEND_PC_DEVICE_TASK_LOG_TAG} normalized cross-device-task-result`, event);
 
     return event;
