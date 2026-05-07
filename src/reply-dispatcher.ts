@@ -385,22 +385,9 @@ export function createXYReplyDispatcher(params: CreateXYReplyDispatcherParams): 
             });
             log(`[ON_IDLE] ✅ Sent completion status update`);
 
-            // 🔑 使用动态taskId发送最终响应
-            await sendA2AResponse({
-              config,
-              sessionId,
-              taskId: currentTaskId,
-              messageId: currentMessageId,
-              text: accumulatedText,
-              append: false,
-              final: true,
-            });
-            finalSent = true;
-            log(`[ON_IDLE] ✅ Sent final response with taskId=${currentTaskId}`);
-
             const runCrossTaskContext = getRunCrossTaskContext();
             if (runCrossTaskContext) {
-              console.log(`${RUN_CROSS_TASK_LOG_TAG} model task completed, preparing cross-device result`, {
+              console.log(`${RUN_CROSS_TASK_LOG_TAG} model task completed, preparing cross-device result before final response`, {
                 sessionId,
                 taskId: currentTaskId,
                 messageLength: accumulatedText.length,
@@ -415,6 +402,19 @@ export function createXYReplyDispatcher(params: CreateXYReplyDispatcherParams): 
                 resultMessage: accumulatedText,
               });
             }
+
+            // 🔑 使用动态taskId发送最终响应
+            await sendA2AResponse({
+              config,
+              sessionId,
+              taskId: currentTaskId,
+              messageId: currentMessageId,
+              text: accumulatedText,
+              append: false,
+              final: true,
+            });
+            finalSent = true;
+            log(`[ON_IDLE] ✅ Sent final response with taskId=${currentTaskId}`);
           } catch (err) {
             error(`[ON_IDLE] Failed to send final response:`, err);
           }
@@ -432,23 +432,9 @@ export function createXYReplyDispatcher(params: CreateXYReplyDispatcherParams): 
             });
             log(`[ON_IDLE] ✅ Sent failure status update`);
 
-            await sendA2AResponse({
-              config,
-              sessionId,
-              taskId: currentTaskId,
-              messageId: currentMessageId,
-              text: "任务执行异常，请重试~",
-              append: false,
-              final: true,
-              errorCode: 99921111,
-              errorMessage: "任务执行异常，请重试",
-            });
-            finalSent = true;
-            log(`[ON_IDLE] ✅ Sent error response with code: 99921111`);
-
             const runCrossTaskContext = getRunCrossTaskContext();
             if (runCrossTaskContext) {
-              console.log(`${RUN_CROSS_TASK_LOG_TAG} model task failed, preparing cross-device failure result`, {
+              console.log(`${RUN_CROSS_TASK_LOG_TAG} model task failed, preparing cross-device failure result before final response`, {
                 sessionId,
                 taskId: currentTaskId,
               });
@@ -462,6 +448,20 @@ export function createXYReplyDispatcher(params: CreateXYReplyDispatcherParams): 
                 resultMessage: "任务执行异常，请重试",
               });
             }
+
+            await sendA2AResponse({
+              config,
+              sessionId,
+              taskId: currentTaskId,
+              messageId: currentMessageId,
+              text: "任务执行异常，请重试~",
+              append: false,
+              final: true,
+              errorCode: 99921111,
+              errorMessage: "任务执行异常，请重试",
+            });
+            finalSent = true;
+            log(`[ON_IDLE] ✅ Sent error response with code: 99921111`);
           } catch (err) {
             error(`[ON_IDLE] Failed to send error response:`, err);
           }
