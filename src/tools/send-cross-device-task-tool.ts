@@ -3,7 +3,7 @@ import { sendA2AResponse, sendCommand } from "../formatter.js";
 import { getXYWebSocketManager } from "../client.js";
 import { getCurrentMessageId, getCurrentTaskId } from "../task-manager.js";
 import type { A2ACommand, CrossDeviceTaskResultEvent } from "../types.js";
-import { getCurrentSessionContext } from "./session-manager.js";
+import { getCurrentSessionContext, runWithSessionContext, type SessionContext } from "./session-manager.js";
 import { sendFileToUserTool } from "./send-file-to-user-tool.js";
 
 const LOG_TAG = "[SendPcDeviceTask]";
@@ -70,7 +70,10 @@ function buildCrossDeviceResult(params: {
   return result;
 }
 
-async function autoSendFileToUserIfNeeded(result: Record<string, unknown>): Promise<Record<string, unknown>> {
+async function autoSendFileToUserIfNeeded(
+  result: Record<string, unknown>,
+  sessionContext: SessionContext,
+): Promise<Record<string, unknown>> {
   const fileUrl = typeof result.fileUrl === "string" ? result.fileUrl : "";
   if (!fileUrl) {
     return result;
@@ -78,9 +81,11 @@ async function autoSendFileToUserIfNeeded(result: Record<string, unknown>): Prom
 
   console.log(`${SEND_CROSS_RESULT_LOG_TAG} auto sending cross-device file before returning tool result, fileUrl=${fileUrl}`);
   try {
-    const sendFileResult = await sendFileToUserTool.execute("auto_send_cross_device_file", {
-      fileRemoteUrls: [fileUrl],
-    });
+    const sendFileResult = await runWithSessionContext(sessionContext, () =>
+      sendFileToUserTool.execute("auto_send_cross_device_file", {
+        fileRemoteUrls: [fileUrl],
+      }),
+    );
     console.log(`${SEND_CROSS_RESULT_LOG_TAG} auto send_file_to_user completed, result=${stringifyForLog(sendFileResult)}`);
     return {
       ...result,
@@ -293,7 +298,7 @@ export const sendCrossDeviceTaskTool: any = {
             message: event.message,
             rawEvent: event.rawEvent,
           });
-          const resultWithFileSend = await autoSendFileToUserIfNeeded(result);
+          const resultWithFileSend = await autoSendFileToUserIfNeeded(result, sessionContext);
           finish(resultWithFileSend);
         })();
       };
