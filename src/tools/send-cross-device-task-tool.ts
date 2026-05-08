@@ -4,6 +4,7 @@ import { getXYWebSocketManager } from "../client.js";
 import { getCurrentMessageId, getCurrentTaskId } from "../task-manager.js";
 import type { A2ACommand, CrossDeviceTaskResultEvent } from "../types.js";
 import { getCurrentSessionContext } from "./session-manager.js";
+import { sendFileToUserTool } from "./send-file-to-user-tool.js";
 
 const LOG_TAG = "[SendPcDeviceTask]";
 const SEND_CROSS_RESULT_LOG_TAG = "[SendCrossResult]";
@@ -42,12 +43,6 @@ function extractFileUrl(message: string): string {
   return firstUrl.replace(/[，。；、！？,.!?;:)\]}]+$/u, "");
 }
 
-function buildSendFileToUserGuidance(fileUrl: string): string {
-  return `检测到跨端任务结果中包含文件 URL，请调用 send_file_to_user 工具发送给用户。调用参数使用：${JSON.stringify({
-    fileRemoteUrls: [fileUrl],
-  })}`;
-}
-
 function buildCrossDeviceResult(params: {
   success: boolean;
   code: string;
@@ -55,31 +50,59 @@ function buildCrossDeviceResult(params: {
   rawEvent: unknown;
 }): Record<string, unknown> {
   const fileUrl = params.success ? extractFileUrl(params.message) : "";
-  const modelMessage = fileUrl
-    ? `${params.message}\n\n${buildSendFileToUserGuidance(fileUrl)}`
-    : params.message;
   const result: Record<string, unknown> = {
     success: params.success,
     code: params.code,
-    message: modelMessage,
+    message: params.message,
     fileUrl,
     rawEvent: params.rawEvent,
   };
 
   if (fileUrl) {
-    result.nextAction = "call_send_file_to_user_when_file_url";
-    result.recommendedTool = "send_file_to_user";
-    result.recommendedParams = {
-      fileRemoteUrls: [fileUrl],
-    };
-    result.instruction = "message 包含文件 URL，下一步请调用 send_file_to_user，并传入 recommendedParams，将文件发送给用户。";
+    result.nextAction = "auto_send_file_to_user";
+    result.instruction = "message 包含文件 URL，send_cross_device_task 将在返回模型前自动发送文件给用户。";
   } else if (params.success) {
     result.nextAction = "reply_to_user_with_message";
     result.instruction = "message 不包含文件 URL，请直接根据 message 内容向用户总结跨端任务结果。";
   }
 
-  console.log(`${SEND_CROSS_RESULT_LOG_TAG} prepared model result, success=${params.success}, hasFileUrl=${Boolean(fileUrl)}, recommendedTool=${String(result.recommendedTool ?? "")}`);
+  console.log(`${SEND_CROSS_RESULT_LOG_TAG} prepared model result, success=${params.success}, hasFileUrl=${Boolean(fileUrl)}, autoSendFile=${Boolean(fileUrl)}`);
   return result;
+}
+
+async function autoSendFileToUserIfNeeded(result: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const fileUrl = typeof result.fileUrl === "string" ? result.fileUrl : "";
+  if (!fileUrl) {
+    return result;
+  }
+
+  console.log(`${SEND_CROSS_RESULT_LOG_TAG} auto sending cross-device file before returning tool result, fileUrl=${fileUrl}`);
+  try {
+    const sendFileResult = await sendFileToUserTool.execute("auto_send_cross_device_file", {
+      fileRemoteUrls: [fileUrl],
+    });
+    console.log(`${SEND_CROSS_RESULT_LOG_TAG} auto send_file_to_user completed, result=${stringifyForLog(sendFileResult)}`);
+    return {
+      ...result,
+      autoSendFileToUser: {
+        success: true,
+        result: sendFileResult,
+      },
+      nextAction: "reply_to_user_with_file_sent_status",
+      instruction: "文件已通过 send_file_to_user 自动发送给用户，请向用户说明跨端任务结果和文件发送状态。",
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`${SEND_CROSS_RESULT_LOG_TAG} auto send_file_to_user failed, error=${errorMessage}`);
+    return {
+      ...result,
+      autoSendFileToUser: {
+        success: false,
+        error: errorMessage,
+      },
+      instruction: `检测到文件 URL，但自动调用 send_file_to_user 失败：${errorMessage}。请向用户说明文件发送失败并给出 fileUrl。`,
+    };
+  }
 }
 
 function normalizeTargetDeviceInfo(value: unknown): TargetDeviceInfo | null {
@@ -151,8 +174,8 @@ export const sendCrossDeviceTaskTool: any = {
 3. 如果存在多个同类型候选设备，或无法判断目标设备，必须先询问用户选择设备，不要调用本工具。
 4. 只有当 targetDeviceInfo 中的 networkId、deviceName、deviceTypeId 都已明确时，才调用本工具。
 
-本工具只负责让端侧通过软总线把任务分发到目标设备执行，并等待端侧回传执行结果。
-本工具不会封装卡片指令，也不会自动发送文件给用户。工具成功返回后，如果 fileUrl/message 是文件 URL，模型必须继续调用 send_file_to_user，参数使用返回的 recommendedParams；如果不是文件 URL，则直接向用户总结 message。`,
+本工具会让端侧通过软总线把任务分发到目标设备执行，并等待端侧回传执行结果。
+如果回传 message 中包含文件 URL，本工具会在返回模型前自动调用 send_file_to_user 发送文件；模型只需要根据返回的 autoSendFileToUser 状态向用户说明结果。`,
   parameters: {
     type: "object",
     properties: {
@@ -229,6 +252,7 @@ export const sendCrossDeviceTaskTool: any = {
       let timeout: NodeJS.Timeout;
       let handler: (event: CrossDeviceTaskResultEvent) => void;
       let settled = false;
+      let resultHandlingStarted = false;
 
       const cleanup = () => {
         clearTimeout(timeout);
@@ -257,12 +281,21 @@ export const sendCrossDeviceTaskTool: any = {
           return;
         }
 
-        finish(buildCrossDeviceResult({
-          success: event.status === "success",
-          code: event.code,
-          message: event.message,
-          rawEvent: event.rawEvent,
-        }));
+        void (async () => {
+          if (resultHandlingStarted) {
+            return;
+          }
+          resultHandlingStarted = true;
+          clearTimeout(timeout);
+          const result = buildCrossDeviceResult({
+            success: event.status === "success",
+            code: event.code,
+            message: event.message,
+            rawEvent: event.rawEvent,
+          });
+          const resultWithFileSend = await autoSendFileToUserIfNeeded(result);
+          finish(resultWithFileSend);
+        })();
       };
 
       timeout = setTimeout(() => {
