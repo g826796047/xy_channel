@@ -7,7 +7,7 @@ import { getCurrentSessionContext } from "./session-manager.js";
 
 const LOG_TAG = "[SendPcDeviceTask]";
 const SEND_CROSS_RESULT_LOG_TAG = "[SendCrossResult]";
-const CROSS_DEVICE_TASK_TIMEOUT_MS = 120_000;
+const CROSS_DEVICE_TASK_TIMEOUT_MS = 5 * 60_000;
 
 type TargetDeviceInfo = {
   networkId: string;
