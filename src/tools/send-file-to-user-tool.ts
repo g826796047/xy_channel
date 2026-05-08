@@ -135,6 +135,7 @@ b. 操作超时时间为2分钟（120秒），请勿重复调用此工具，如�
   },
 
   async execute(toolCallId: string, params: any) {
+    console.log(`[SendCrossResult] send_file_to_user invoked, toolCallId=${toolCallId}, params=${JSON.stringify(params)}`);
     // Set timeout for the entire operation (2 minutes)
     const TOOL_TIMEOUT = 120000; // 2 minutes in milliseconds
     let timeoutHandle: NodeJS.Timeout | null = null;

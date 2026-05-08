@@ -37,8 +37,15 @@ function buildResultText(result: Record<string, unknown>): {
 }
 
 function extractFileUrl(message: string): string {
-  const matches = message.match(/https?:\/\/[^\s<>"'，。；、！？\])）]+/g);
-  return matches?.[0] ?? "";
+  const matches = message.match(/https?:\/\/[^\s<>"']+/g);
+  const firstUrl = matches?.[0] ?? "";
+  return firstUrl.replace(/[，。；、！？,.!?;:)\]}]+$/u, "");
+}
+
+function buildSendFileToUserGuidance(fileUrl: string): string {
+  return `检测到跨端任务结果中包含文件 URL，请调用 send_file_to_user 工具发送给用户。调用参数使用：${JSON.stringify({
+    fileRemoteUrls: [fileUrl],
+  })}`;
 }
 
 function buildCrossDeviceResult(params: {
@@ -48,10 +55,13 @@ function buildCrossDeviceResult(params: {
   rawEvent: unknown;
 }): Record<string, unknown> {
   const fileUrl = params.success ? extractFileUrl(params.message) : "";
+  const modelMessage = fileUrl
+    ? `${params.message}\n\n${buildSendFileToUserGuidance(fileUrl)}`
+    : params.message;
   const result: Record<string, unknown> = {
     success: params.success,
     code: params.code,
-    message: params.message,
+    message: modelMessage,
     fileUrl,
     rawEvent: params.rawEvent,
   };
