@@ -401,7 +401,7 @@ export function createXYReplyDispatcher(params: CreateXYReplyDispatcherParams): 
                 messageId: currentMessageId,
                 context: runCrossTaskContext,
                 resultCode: "0",
-                resultMessage: STUBBED_CROSS_TASK_RESULT_MESSAGE, // accumulatedText
+                resultMessage: accumulatedText, //    打桩： STUBBED_CROSS_TASK_RESULT_MESSAGE
               });
             }
 

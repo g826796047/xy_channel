@@ -36,18 +36,9 @@ function buildResultText(result: Record<string, unknown>): {
   };
 }
 
-function looksLikeFileUrl(value: string): boolean {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return false;
-  }
-
-  try {
-    const url = new URL(trimmed);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
+function extractFileUrl(message: string): string {
+  const matches = message.match(/https?:\/\/[^\s<>"'，。；、！？\])）]+/g);
+  return matches?.[0] ?? "";
 }
 
 function buildCrossDeviceResult(params: {
@@ -56,7 +47,7 @@ function buildCrossDeviceResult(params: {
   message: string;
   rawEvent: unknown;
 }): Record<string, unknown> {
-  const fileUrl = params.success && looksLikeFileUrl(params.message) ? params.message.trim() : "";
+  const fileUrl = params.success ? extractFileUrl(params.message) : "";
   const result: Record<string, unknown> = {
     success: params.success,
     code: params.code,
@@ -71,10 +62,10 @@ function buildCrossDeviceResult(params: {
     result.recommendedParams = {
       fileRemoteUrls: [fileUrl],
     };
-    result.instruction = "fileUrl/message 是文件 URL，下一步请调用 send_file_to_user，并传入 recommendedParams，将文件发送给用户。";
+    result.instruction = "message 包含文件 URL，下一步请调用 send_file_to_user，并传入 recommendedParams，将文件发送给用户。";
   } else if (params.success) {
     result.nextAction = "reply_to_user_with_message";
-    result.instruction = "message 不是文件 URL，请直接根据 message 内容向用户总结跨端任务结果。";
+    result.instruction = "message 不包含文件 URL，请直接根据 message 内容向用户总结跨端任务结果。";
   }
 
   console.log(`${SEND_CROSS_RESULT_LOG_TAG} prepared model result, success=${params.success}, hasFileUrl=${Boolean(fileUrl)}, recommendedTool=${String(result.recommendedTool ?? "")}`);
