@@ -155,3 +155,24 @@ export function getCurrentSessionContext(): SessionContext | null {
 
   return context;
 }
+
+export function appendRunCrossTaskFileUrls(fileUrls: string[]): string[] {
+  const context = asyncLocalStorage.getStore() ?? null;
+  const runCrossTaskContext = context?.runCrossTaskContext;
+  if (!runCrossTaskContext || fileUrls.length === 0) {
+    return runCrossTaskContext?.fileUrls ?? [];
+  }
+
+  const existing = Array.isArray(runCrossTaskContext.fileUrls) ? runCrossTaskContext.fileUrls : [];
+  const merged = Array.from(new Set([...existing, ...fileUrls.filter((url) => typeof url === "string" && url.length > 0)]));
+  runCrossTaskContext.fileUrls = merged;
+
+  const sessionWithRef = Array.from(activeSessions.values()).find(
+    (session) => session.runCrossTaskContext === runCrossTaskContext,
+  );
+  if (sessionWithRef?.runCrossTaskContext) {
+    sessionWithRef.runCrossTaskContext.fileUrls = merged;
+  }
+
+  return merged;
+}

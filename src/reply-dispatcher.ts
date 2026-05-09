@@ -111,7 +111,7 @@ function buildDistributionStatusCommand(context: RunCrossTaskContext): A2AComman
   };
 }
 
-function buildCrossTaskExecuteResultCommand(code: string, message: string): A2ACommand {
+function buildCrossTaskExecuteResultCommand(code: string, message: string, fileUrls: string[] = []): A2ACommand {
   return {
     header: {
       namespace: "DistributionInteraction",
@@ -120,6 +120,7 @@ function buildCrossTaskExecuteResultCommand(code: string, message: string): A2AC
     payload: {
       code,
       message,
+      fileUrls,
     },
   };
 }
@@ -134,12 +135,14 @@ async function sendRunCrossTaskResult(params: {
   resultMessage: string;
 }): Promise<void> {
   const { config, sessionId, taskId, messageId, context, resultCode, resultMessage } = params;
+  const fileUrls = Array.isArray(context.fileUrls) ? context.fileUrls : [];
   const statusCommand = buildDistributionStatusCommand(context);
-  const resultCommand = buildCrossTaskExecuteResultCommand(resultCode, resultMessage);
+  const resultCommand = buildCrossTaskExecuteResultCommand(resultCode, resultMessage, fileUrls);
 
   console.log(`${RUN_CROSS_TASK_LOG_TAG} sending merged cross-task result commands`, {
     statusCommand,
     resultCommand,
+    cachedFileUrls: fileUrls,
   });
   await sendCommand({
     config,
@@ -154,6 +157,7 @@ async function sendRunCrossTaskResult(params: {
     taskId,
     resultCode,
     resultMessageLength: resultMessage.length,
+    fileUrlCount: fileUrls.length,
   });
 }
 

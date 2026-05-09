@@ -502,11 +502,15 @@ export class XYWebSocketManager extends EventEmitter {
     const message = typeof item?.payload?.message === "string"
       ? item.payload.message
       : "";
+    const fileUrls = Array.isArray(item?.payload?.fileUrls)
+      ? item.payload.fileUrls.filter((url: unknown): url is string => typeof url === "string" && url.length > 0)
+      : [];
     const status: "success" | "failed" = code === "0" ? "success" : "failed";
     const event = {
       sessionId,
       code,
       message,
+      fileUrls,
       status,
       rawEvent: item,
     };

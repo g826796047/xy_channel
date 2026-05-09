@@ -47,26 +47,31 @@ function buildCrossDeviceResult(params: {
   success: boolean;
   code: string;
   message: string;
+  fileUrls: string[];
   rawEvent: unknown;
 }): Record<string, unknown> {
-  const fileUrl = params.success ? extractFileUrl(params.message) : "";
+  const payloadFileUrls = params.success ? params.fileUrls.filter((url) => typeof url === "string" && url.length > 0) : [];
+  const messageFileUrl = params.success ? extractFileUrl(params.message) : "";
+  const fileUrls = Array.from(new Set([...payloadFileUrls, ...(messageFileUrl ? [messageFileUrl] : [])]));
+  const fileUrl = fileUrls[0] ?? "";
   const result: Record<string, unknown> = {
     success: params.success,
     code: params.code,
     message: params.message,
     fileUrl,
+    fileUrls,
     rawEvent: params.rawEvent,
   };
 
-  if (fileUrl) {
+  if (fileUrls.length > 0) {
     result.nextAction = "auto_send_file_to_user";
-    result.instruction = "message 包含文件 URL，send_cross_device_task 将在返回模型前自动发送文件给用户。";
+    result.instruction = "跨端执行结果包含 fileUrls，send_cross_device_task 将在返回模型前自动发送文件给用户。";
   } else if (params.success) {
     result.nextAction = "reply_to_user_with_message";
-    result.instruction = "message 不包含文件 URL，请直接根据 message 内容向用户总结跨端任务结果。";
+    result.instruction = "跨端执行结果不包含 fileUrls，请直接根据 message 内容向用户总结跨端任务结果。";
   }
 
-  console.log(`${SEND_CROSS_RESULT_LOG_TAG} prepared model result, success=${params.success}, hasFileUrl=${Boolean(fileUrl)}, autoSendFile=${Boolean(fileUrl)}`);
+  console.log(`${SEND_CROSS_RESULT_LOG_TAG} prepared model result, success=${params.success}, fileUrlCount=${fileUrls.length}, autoSendFile=${fileUrls.length > 0}`);
   return result;
 }
 
@@ -74,16 +79,20 @@ async function autoSendFileToUserIfNeeded(
   result: Record<string, unknown>,
   sessionContext: SessionContext,
 ): Promise<Record<string, unknown>> {
-  const fileUrl = typeof result.fileUrl === "string" ? result.fileUrl : "";
-  if (!fileUrl) {
+  const fileUrls = Array.isArray(result.fileUrls)
+    ? result.fileUrls.filter((url): url is string => typeof url === "string" && url.length > 0)
+    : typeof result.fileUrl === "string" && result.fileUrl
+      ? [result.fileUrl]
+      : [];
+  if (fileUrls.length === 0) {
     return result;
   }
 
-  console.log(`${SEND_CROSS_RESULT_LOG_TAG} auto sending cross-device file before returning tool result, fileUrl=${fileUrl}`);
+  console.log(`${SEND_CROSS_RESULT_LOG_TAG} auto sending cross-device files before returning tool result, fileUrls=${stringifyForLog(fileUrls)}`);
   try {
     const sendFileResult = await runWithSessionContext(sessionContext, () =>
       sendFileToUserTool.execute("auto_send_cross_device_file", {
-        fileRemoteUrls: [fileUrl],
+        fileRemoteUrls: fileUrls,
       }),
     );
     console.log(`${SEND_CROSS_RESULT_LOG_TAG} auto send_file_to_user completed, result=${stringifyForLog(sendFileResult)}`);
@@ -94,7 +103,10 @@ async function autoSendFileToUserIfNeeded(
         result: sendFileResult,
       },
       nextAction: "reply_to_user_with_file_sent_status",
-      instruction: "文件已通过 send_file_to_user 自动发送给用户，请向用户说明跨端任务结果和文件发送状态。",
+      message: `${typeof result.message === "string" ? result.message : ""}
+
+文件已通过 send_file_to_user 自动发送给用户。你现在必须生成一段面向用户的最终回复，说明跨端任务已完成且文件已发送。不要再调用 send_file_to_user。`,
+      instruction: "文件已通过 send_file_to_user 自动发送给用户。现在必须生成面向用户的最终回复，说明跨端任务已完成且文件已发送；不要再调用 send_file_to_user。",
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -105,7 +117,10 @@ async function autoSendFileToUserIfNeeded(
         success: false,
         error: errorMessage,
       },
-      instruction: `检测到文件 URL，但自动调用 send_file_to_user 失败：${errorMessage}。请向用户说明文件发送失败并给出 fileUrl。`,
+      message: `${typeof result.message === "string" ? result.message : ""}
+
+检测到 fileUrls，但自动发送文件失败：${errorMessage}。你现在必须生成一段面向用户的最终回复，说明跨端任务已完成但文件发送失败，并把 fileUrls 告诉用户。不要再调用 send_file_to_user。`,
+      instruction: `检测到 fileUrls，但自动调用 send_file_to_user 失败：${errorMessage}。现在必须生成面向用户的最终回复，说明文件发送失败并给出 fileUrls；不要再调用 send_file_to_user。`,
     };
   }
 }
@@ -296,6 +311,7 @@ export const sendCrossDeviceTaskTool: any = {
             success: event.status === "success",
             code: event.code,
             message: event.message,
+            fileUrls: event.fileUrls,
             rawEvent: event.rawEvent,
           });
           const resultWithFileSend = await autoSendFileToUserIfNeeded(result, sessionContext);

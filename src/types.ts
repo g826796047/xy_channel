@@ -91,6 +91,7 @@ export interface CrossDeviceTaskResultEvent {
   sessionId: string;
   code: string;
   message: string;
+  fileUrls: string[];
   status: "success" | "failed";
   rawEvent: any;
 }
@@ -101,6 +102,7 @@ export interface RunCrossTaskContext {
   isDistributed: boolean;
   networkId: string;
   isSupportAgent: boolean;
+  fileUrls?: string[];
   rawContext: any;
 }
 
