@@ -13,6 +13,19 @@ const PEER_TASK_COMPLETED_STATUS_TEXT = "对端设备已完成当前任务，正
 
 type ModelResultStatus = "对端设备执行任务成功且返回有文件" | "对端设备执行任务成功且返回无文件" | "对端设备任务失败";
 
+type CrossDeviceInternalResult = {
+  success: boolean;
+  code: string;
+  message: string;
+  fileUrls: string[];
+  rawEvent: unknown;
+  autoSendFileToUser?: {
+    success: boolean;
+    result?: unknown;
+    error?: string;
+  };
+};
+
 type TargetDeviceInfo = {
   networkId: string;
   deviceName: string;
@@ -40,21 +53,28 @@ function buildResultText(result: Record<string, unknown>): {
   };
 }
 
-function buildModelToolResult(result: Record<string, unknown>): Record<string, unknown> {
-  const success = result.success === true;
-  const fileUrls = Array.isArray(result.fileUrls)
-    ? result.fileUrls.filter((url): url is string => typeof url === "string" && url.length > 0)
-    : [];
-  const resultStatus: ModelResultStatus = success
+function buildModelToolResult(result: CrossDeviceInternalResult): Record<string, unknown> {
+  const fileUrls = result.fileUrls;
+  const resultStatus: ModelResultStatus = result.success
     ? fileUrls.length > 0
       ? "对端设备执行任务成功且返回有文件"
       : "对端设备执行任务成功且返回无文件"
     : "对端设备任务失败";
-  const baseMessage = typeof result.message === "string" ? result.message : "";
-  const message =
-    resultStatus === "对端设备执行任务成功且返回有文件"
-      ? `${baseMessage}\n\n文件已自动发送给用户。`
-      : baseMessage;
+  const baseMessage = result.message || "对端设备未返回具体结果。";
+  let message = `跨端任务执行结果：${baseMessage}`;
+
+  if (resultStatus === "对端设备执行任务成功且返回有文件") {
+    if (result.autoSendFileToUser?.success) {
+      message += "\n\n对端设备返回了文件，系统已自动通过 send_file_to_user 将文件卡片发送给用户。请你基于跨端任务结果生成最终回复，告知用户任务已完成且文件已发送。";
+    } else {
+      const errorMessage = result.autoSendFileToUser?.error || "未知错误";
+      message += `\n\n对端设备返回了文件，但系统自动发送文件卡片失败：${errorMessage}。请你向用户说明任务已完成但文件发送失败。`;
+    }
+  } else if (resultStatus === "对端设备执行任务成功且返回无文件") {
+    message += "\n\n对端设备未返回文件。请你直接根据跨端任务结果向用户总结完成情况。";
+  } else {
+    message += "\n\n对端设备任务失败。请你向用户说明失败情况，并给出可重试或调整任务描述的建议。";
+  }
 
   return {
     message,
@@ -74,41 +94,27 @@ function buildCrossDeviceResult(params: {
   message: string;
   fileUrls: string[];
   rawEvent: unknown;
-}): Record<string, unknown> {
+}): CrossDeviceInternalResult {
   const payloadFileUrls = params.success ? params.fileUrls.filter((url) => typeof url === "string" && url.length > 0) : [];
   const messageFileUrl = params.success ? extractFileUrl(params.message) : "";
   const fileUrls = Array.from(new Set([...payloadFileUrls, ...(messageFileUrl ? [messageFileUrl] : [])]));
-  const fileUrl = fileUrls[0] ?? "";
-  const result: Record<string, unknown> = {
+  const result: CrossDeviceInternalResult = {
     success: params.success,
     code: params.code,
     message: params.message,
-    fileUrl,
     fileUrls,
     rawEvent: params.rawEvent,
   };
-
-  if (fileUrls.length > 0) {
-    result.nextAction = "auto_send_file_to_user";
-    result.instruction = "跨端执行结果包含 fileUrls，send_cross_device_task 将在返回模型前自动发送文件给用户，请向用户总结跨端任务结果。";
-  } else if (params.success) {
-    result.nextAction = "reply_to_user_with_message";
-    result.instruction = "跨端执行结果不包含 fileUrls，请直接根据 message 内容向用户总结跨端任务结果。";
-  }
 
   console.log(`${SEND_CROSS_RESULT_LOG_TAG} prepared model result, success=${params.success}, fileUrlCount=${fileUrls.length}, autoSendFile=${fileUrls.length > 0}`);
   return result;
 }
 
 async function autoSendFileToUserIfNeeded(
-  result: Record<string, unknown>,
+  result: CrossDeviceInternalResult,
   sessionContext: SessionContext,
-): Promise<Record<string, unknown>> {
-  const fileUrls = Array.isArray(result.fileUrls)
-    ? result.fileUrls.filter((url): url is string => typeof url === "string" && url.length > 0)
-    : typeof result.fileUrl === "string" && result.fileUrl
-      ? [result.fileUrl]
-      : [];
+): Promise<CrossDeviceInternalResult> {
+  const fileUrls = result.fileUrls;
   if (fileUrls.length === 0) {
     return result;
   }
@@ -127,11 +133,6 @@ async function autoSendFileToUserIfNeeded(
         success: true,
         result: sendFileResult,
       },
-      nextAction: "reply_to_user_with_file_sent_status",
-      message: `${typeof result.message === "string" ? result.message : ""}
-
-文件已通过 send_file_to_user 自动发送给用户。你现在必须生成一段面向用户的最终回复，说明跨端任务已完成且文件已发送。不要再调用 send_file_to_user。`,
-      instruction: "文件已通过 send_file_to_user 自动发送给用户。现在必须生成面向用户的最终回复，说明跨端任务已完成且文件已发送；不要再调用 send_file_to_user。",
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -142,10 +143,6 @@ async function autoSendFileToUserIfNeeded(
         success: false,
         error: errorMessage,
       },
-      message: `${typeof result.message === "string" ? result.message : ""}
-
-检测到 fileUrls，但自动发送文件失败：${errorMessage}。你现在必须生成一段面向用户的最终回复，说明跨端任务已完成但文件发送失败，并把 fileUrls 告诉用户。不要再调用 send_file_to_user。`,
-      instruction: `检测到 fileUrls，但自动调用 send_file_to_user 失败：${errorMessage}。现在必须生成面向用户的最终回复，说明文件发送失败并给出 fileUrls；不要再调用 send_file_to_user。`,
     };
   }
 }
@@ -181,7 +178,11 @@ function normalizeTargetDeviceInfo(value: unknown): TargetDeviceInfo | null {
   };
 }
 
-function buildUnifiedDistributeCommand(query: string, targetDeviceInfo: TargetDeviceInfo): A2ACommand {
+function buildUnifiedDistributeCommand(
+  query: string,
+  targetDeviceInfo: TargetDeviceInfo,
+  distributionSessionid: string,
+): A2ACommand {
   return {
     header: {
       namespace: "DistributionInteraction",
@@ -200,6 +201,8 @@ function buildUnifiedDistributeCommand(query: string, targetDeviceInfo: TargetDe
             payload: {
               agentId: "",
               isSupportAgent: true,
+              distributionSessionid,
+              localNetworkId: targetDeviceInfo.networkId,
             },
           },
         },
@@ -285,7 +288,7 @@ export const sendCrossDeviceTaskTool: any = {
     const taskId = getCurrentTaskId(sessionId) ?? sessionContext.taskId;
     const messageId = getCurrentMessageId(sessionId) ?? sessionContext.messageId;
     const wsManager = getXYWebSocketManager(config);
-    const command = buildUnifiedDistributeCommand(query, targetDeviceInfo);
+    const command = buildUnifiedDistributeCommand(query, targetDeviceInfo, sessionId);
     const statusText = `正在调用${targetDeviceInfo.deviceName}执行“${query}”跨设备任务...`;
 
     console.log(
@@ -307,7 +310,7 @@ export const sendCrossDeviceTaskTool: any = {
         console.log(`${SEND_CROSS_RESULT_LOG_TAG} cleaned up cross-device-task-result listener`);
       };
 
-      const finish = (result: Record<string, unknown>) => {
+      const finish = (result: CrossDeviceInternalResult) => {
         if (settled) {
           return;
         }
@@ -366,7 +369,7 @@ export const sendCrossDeviceTaskTool: any = {
           success: false,
           code: "",
           message: `Cross-device task timed out after ${CROSS_DEVICE_TASK_TIMEOUT_MS / 1000} seconds.`,
-          fileUrl: "",
+          fileUrls: [],
           rawEvent: null,
         });
       }, CROSS_DEVICE_TASK_TIMEOUT_MS);
@@ -404,7 +407,7 @@ export const sendCrossDeviceTaskTool: any = {
             success: false,
             code: "",
             message: `Failed to send cross-device task command: ${error instanceof Error ? error.message : String(error)}`,
-            fileUrl: "",
+            fileUrls: [],
             rawEvent: null,
           });
         });
