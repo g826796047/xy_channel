@@ -65,7 +65,7 @@ function buildCrossDeviceResult(params: {
 
   if (fileUrls.length > 0) {
     result.nextAction = "auto_send_file_to_user";
-    result.instruction = "跨端执行结果包含 fileUrls，send_cross_device_task 将在返回模型前自动发送文件给用户。";
+    result.instruction = "跨端执行结果包含 fileUrls，send_cross_device_task 将在返回模型前自动发送文件给用户，请向用户总结跨端任务结果。";
   } else if (params.success) {
     result.nextAction = "reply_to_user_with_message";
     result.instruction = "跨端执行结果不包含 fileUrls，请直接根据 message 内容向用户总结跨端任务结果。";
@@ -260,7 +260,7 @@ export const sendCrossDeviceTaskTool: any = {
     const messageId = getCurrentMessageId(sessionId) ?? sessionContext.messageId;
     const wsManager = getXYWebSocketManager(config);
     const command = buildUnifiedDistributeCommand(query, targetDeviceInfo);
-    const statusText = `正在调用${targetDeviceInfo.deviceName}执行${query}...`;
+    const statusText = `正在调用${targetDeviceInfo.deviceName}执行“${query}”跨设备任务...`;
 
     console.log(
       `${LOG_TAG} session context resolved, sessionId=${sessionId}, taskId=${taskId}, messageId=${messageId}`,
