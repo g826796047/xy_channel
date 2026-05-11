@@ -1,5 +1,5 @@
 import type { ChannelAgentTool } from "openclaw/plugin-sdk";
-import { sendA2AResponse, sendCommand } from "../formatter.js";
+import { sendCommand, sendStatusUpdate } from "../formatter.js";
 import { getXYWebSocketManager } from "../client.js";
 import { getCurrentMessageId, getCurrentTaskId } from "../task-manager.js";
 import type { A2ACommand, CrossDeviceTaskResultEvent } from "../types.js";
@@ -9,6 +9,9 @@ import { sendFileToUserTool } from "./send-file-to-user-tool.js";
 const LOG_TAG = "[SendPcDeviceTask]";
 const SEND_CROSS_RESULT_LOG_TAG = "[SendCrossResult]";
 const CROSS_DEVICE_TASK_TIMEOUT_MS = 5 * 60_000;
+const PEER_TASK_COMPLETED_STATUS_TEXT = "对端设备已完成当前任务，正在处理中 ...";
+
+type ModelResultStatus = "对端设备执行任务成功且返回有文件" | "对端设备执行任务成功且返回无文件" | "对端设备任务失败";
 
 type TargetDeviceInfo = {
   networkId: string;
@@ -34,6 +37,28 @@ function buildResultText(result: Record<string, unknown>): {
         text: JSON.stringify(result),
       },
     ],
+  };
+}
+
+function buildModelToolResult(result: Record<string, unknown>): Record<string, unknown> {
+  const success = result.success === true;
+  const fileUrls = Array.isArray(result.fileUrls)
+    ? result.fileUrls.filter((url): url is string => typeof url === "string" && url.length > 0)
+    : [];
+  const resultStatus: ModelResultStatus = success
+    ? fileUrls.length > 0
+      ? "对端设备执行任务成功且返回有文件"
+      : "对端设备执行任务成功且返回无文件"
+    : "对端设备任务失败";
+  const baseMessage = typeof result.message === "string" ? result.message : "";
+  const message =
+    resultStatus === "对端设备执行任务成功且返回有文件"
+      ? `${baseMessage}\n\n文件已自动发送给用户。`
+      : baseMessage;
+
+  return {
+    message,
+    resultStatus,
   };
 }
 
@@ -193,6 +218,7 @@ export const sendCrossDeviceTaskTool: any = {
 2. 根据用户原始需求选择唯一目标设备。
 3. 如果存在多个同类型候选设备，或无法判断目标设备，必须先询问用户选择设备，不要调用本工具。
 4. 只有当 targetDeviceInfo 中的 networkId、deviceName、deviceTypeId 都已明确时，才调用本工具。
+5. 传入的query必须是用户原始query，不要做任何更改。
 
 本工具会让端侧通过软总线把任务分发到目标设备执行，并等待端侧回传执行结果。
 如果回传 message 中包含文件 URL，本工具会在返回模型前自动调用 send_file_to_user 发送文件；模型只需要根据返回的 autoSendFileToUser 状态向用户说明结果。`,
@@ -286,10 +312,11 @@ export const sendCrossDeviceTaskTool: any = {
           return;
         }
         settled = true;
+        const modelResult = buildModelToolResult(result);
         console.log(`${LOG_TAG} finishing tool result=${stringifyForLog(result)}`);
-        console.log(`${SEND_CROSS_RESULT_LOG_TAG} returning model result=${stringifyForLog(result)}`);
+        console.log(`${SEND_CROSS_RESULT_LOG_TAG} returning model result=${stringifyForLog(modelResult)}`);
         cleanup();
-        resolve(buildResultText(result));
+        resolve(buildResultText(modelResult));
       };
 
       handler = (event: CrossDeviceTaskResultEvent) => {
@@ -307,6 +334,19 @@ export const sendCrossDeviceTaskTool: any = {
           }
           resultHandlingStarted = true;
           clearTimeout(timeout);
+          try {
+            await sendStatusUpdate({
+              config,
+              sessionId,
+              taskId,
+              messageId,
+              text: PEER_TASK_COMPLETED_STATUS_TEXT,
+              state: "working",
+            });
+            console.log(`${SEND_CROSS_RESULT_LOG_TAG} sent peer task completed status update`);
+          } catch (error) {
+            console.error(`${SEND_CROSS_RESULT_LOG_TAG} failed to send peer task completed status update: ${error instanceof Error ? error.message : String(error)}`);
+          }
           const result = buildCrossDeviceResult({
             success: event.status === "success",
             code: event.code,
@@ -334,18 +374,17 @@ export const sendCrossDeviceTaskTool: any = {
       wsManager.on("cross-device-task-result", handler);
       console.log(`${LOG_TAG} cross-device-task-result listener registered, timeoutMs=${CROSS_DEVICE_TASK_TIMEOUT_MS}`);
 
-      console.log(`${LOG_TAG} sending text update=${statusText}`);
-      sendA2AResponse({
+      console.log(`${LOG_TAG} sending status update=${statusText}`);
+      sendStatusUpdate({
         config,
         sessionId,
         taskId,
         messageId,
         text: statusText,
-        append: false,
-        final: false,
+        state: "working",
       })
         .then(() => {
-          console.log(`${LOG_TAG} text update sent, sending command=${stringifyForLog(command)}`);
+          console.log(`${LOG_TAG} status update sent, sending command=${stringifyForLog(command)}`);
           return sendCommand({
             config,
             sessionId,
