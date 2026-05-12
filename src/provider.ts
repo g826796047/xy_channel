@@ -170,15 +170,14 @@ function createRetryingStream(
           }
           if (event.type === "error") {
             console.log(`[xiaoyiprovider] stream error after content: ${event.error?.errorMessage}`);
-            resultResolve(event.error);
-            yield event;
-            return;
+            errorResult = event.error;
+            break; // break inner loop, proceed to retry decision
           }
           yield event;
         }
       }
 
-      // Stream ended during buffer phase — decide whether to retry
+      // Stream ended (buffer or streaming phase) — decide whether to retry
       if (errorResult?.stopReason === "error" && isRetryableProviderError(errorResult.errorMessage)) {
         if (attempt < MAX_RETRY_ATTEMPTS - 1) {
           const delayMs = getRetryDelayMs(attempt + 1, cronJob);
@@ -206,6 +205,7 @@ function createRetryingStream(
       }
       if (errorResult && buffer.every(b => b.type !== "done" && b.type !== "error")) {
         resultResolve(errorResult);
+        yield { type: "error", reason: "error", error: errorResult };
       }
       return;
     }

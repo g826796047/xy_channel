@@ -14,6 +14,7 @@ export interface RawSkill {
   skillName: string;
   skillDesc: string;
   packUrl: string;
+  rrfScore?: number;
 }
 
 export interface FormattedSkill {
@@ -22,6 +23,7 @@ export interface FormattedSkill {
   skillDesc: string;
   downloadPath: string;
   status: "已安装" | "未安装";
+  rrfScore?: number;
 }
 
 export interface ToolSearchResult {
